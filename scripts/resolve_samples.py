@@ -23,6 +23,10 @@ Outputs (default samples/resolved/):
     coverage.txt                   process x era table of preferred datasets
     lists/<tier>/<era>/<process>.txt   preferred dataset names, one per line
     discovery_<run>_<tier>.txt     (--discover) candidate signal primaries
+
+datasets.csv/json and coverage.txt describe only the latest run. List files are
+replaced for the processes, runs and tiers that run queried (stale ones are
+removed); lists outside that scope, or whose DAS query failed, are kept.
 """
 
 import argparse
@@ -218,6 +222,8 @@ def resolve(cat, das, args, processes, runs, tiers):
     patterns = sorted({job[4] for job in jobs})
     print("Querying DAS: %d patterns, %d workers ..." % (len(patterns), args.workers))
     found, failures = run_parallel(lambda p: das.datasets(p, args.status), patterns, args.workers)
+    # (process, run, tier) whose dataset list may be incomplete
+    failed_scopes = {(name, run, tier) for name, run, tier, _, pattern in jobs if pattern in failures}
 
     records = {}          # (process, dataset) -> record
     pattern_hits = defaultdict(int)  # (process, run, primary pattern) -> n datasets
@@ -255,9 +261,9 @@ def resolve(cat, das, args, processes, runs, tiers):
     rows = sorted(records.values(), key=lambda r: (
         ["signal", "background", "control"].index(r["role"]), r["process"], r["run"],
         era_index(cat, r["run"], r["era"]), r["tier"], r["dataset"]))
-    write_outputs(cat, args, rows, processes, runs, tiers)
+    write_outputs(cat, args, rows, processes, runs, tiers, failed_scopes)
 
-    empty = [(n, r, p) for n, r, t, p, _ in jobs if pattern_hits[(n, r, p)] == 0]
+    empty =[(n, r, p) for n, r, t, p, _ in jobs if pattern_hits[(n, r, p)] == 0]
     if empty:
         print("\nPatterns that matched nothing (fix names in the catalog or check --discover):")
         for name, run, primary in sorted(set(empty)):
@@ -282,7 +288,7 @@ def era_index(cat, run, era):
     return eras.index(era) if era in eras else len(eras)
 
 
-def write_outputs(cat, args, rows, processes, runs, tiers):
+def write_outputs(cat, args, rows, processes, runs, tiers, failed_scopes=frozenset()):
     os.makedirs(args.out, exist_ok=True)
     fields = ["role", "priority", "process", "run", "era", "tier", "preferred",
               "nevents", "nfiles", "size_gb", "dataset"]
@@ -295,21 +301,64 @@ def write_outputs(cat, args, rows, processes, runs, tiers):
                    "catalog": os.path.relpath(args.catalog, REPO),
                    "status": args.status, "datasets": rows}, handle, indent=1)
 
-    lists = defaultdict(list)
-    for rec in rows:
-        if rec["preferred"]:
-            lists[(rec["tier"], rec["era"], rec["process"])].append(rec["dataset"])
-    for (tier, era, name), datasets in lists.items():
-        path = os.path.join(args.out, "lists", tier, era, name + ".txt")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as handle:
-            handle.write("\n".join(datasets) + "\n")
+    write_lists(cat, args.out, rows, processes, runs, tiers, failed_scopes)
 
     table = coverage_table(cat, rows, processes, runs, tiers)
     with open(os.path.join(args.out, "coverage.txt"), "w") as handle:
         handle.write(table)
     print("\n" + table)
     print("Wrote %d datasets to %s" % (len(rows), display_path(args.out)))
+    if args.process or args.role or args.run or args.tier:
+        print("Filtered run: datasets.csv, datasets.json and coverage.txt cover only the "
+              "processes, runs and tiers queried this time.")
+
+
+def list_path(out, tier, era, process):
+    return os.path.join(out, "lists", tier, era, process + ".txt")
+
+
+def write_lists(cat, out, rows, processes, runs, tiers, failed_scopes):
+    """Rewrite lists/<tier>/<era>/<process>.txt for everything this run queried.
+
+    Old list files in the queried (process, run, tier) scope are removed first,
+    so an era that no longer has datasets for a process loses its list instead
+    of keeping a stale one. Lists outside the scope (processes, runs or tiers
+    not queried this time) are left alone. A scope with a failed DAS query keeps
+    its old lists untouched, since the new result may be incomplete.
+    """
+    lists = defaultdict(list)
+    for rec in rows:
+        if rec["preferred"] and (rec["process"], rec["run"], rec["tier"]) not in failed_scopes:
+            lists[list_path(out, rec["tier"], rec["era"], rec["process"])].append(rec["dataset"])
+
+    removed = set()
+    for name in processes:
+        for run in runs:
+            if run not in cat["processes"][name].get("patterns", {}):
+                continue
+            for tier in tiers:
+                if (name, run, tier) in failed_scopes:
+                    continue
+                for era in cat["runs"][run]["eras"]:
+                    path = list_path(out, tier, era, name)
+                    if os.path.exists(path):
+                        os.remove(path)
+                        removed.add(path)
+
+    for path, datasets in lists.items():
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as handle:
+            handle.write("\n".join(datasets) + "\n")
+
+    stale = sorted(removed - set(lists))
+    if stale:
+        print("\nRemoved %d stale list file(s), no datasets found this time:" % len(stale))
+        for path in stale:
+            print("  " + display_path(path))
+    if failed_scopes:
+        print("\nKept the previous lists (DAS query failed) for:")
+        for name, run, tier in sorted(failed_scopes):
+            print("  %-28s %-5s %s" % (name, run, tier))
 
 
 def display_path(path):

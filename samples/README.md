@@ -77,6 +77,21 @@ Useful options: `--process`, `--role`, `--run run3`, `--tier AODSIM`,
 `--no-summary` (skip event counts, much faster), `--dry-run` (print the DAS
 queries), `--status PRODUCTION` (samples still being produced).
 
+**Reruns.** `datasets.csv`, `datasets.json` and `coverage.txt` always describe
+only the latest run, so a filtered run (`--process`, `--run`, …) leaves them
+with just that subset. List files are updated per scope:
+- **Queried this run:** each list for a queried process, run and tier is
+  rewritten, and a list whose era no longer has any datasets is deleted. The
+  script prints the deleted files.
+- **Not queried:** lists for other processes, runs or tiers are left as they
+  were.
+- **DAS query failed:** that process, run and tier keeps its previous lists,
+  and the script says so.
+
+`lists/` therefore never holds a stale list for anything you just resolved.
+That matters because `nanoaod/make_cfg.py --lists` turns every list file into
+CRAB tasks.
+
 ## Things to check before training
 
 - **Is the information you need in the tier?** Standard NanoAOD has per-muon
