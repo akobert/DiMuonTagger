@@ -1,0 +1,254 @@
+# MC sample catalog for the displaced di-muon vertex tagger.
+#
+# This file lists the physics processes we want and the DAS name patterns they
+# should match. It does NOT store resolved dataset names: run
+# scripts/resolve_samples.py on lxplus/LPC to expand the patterns against DAS.
+#
+# Patterns are DAS wildcards (only `*`, case-sensitive) for the PRIMARY dataset
+# name. The processed-dataset part comes from `runs.<run>.campaign_globs`, and
+# each returned dataset is assigned to an era by the regexes under `eras`.
+#
+# status:
+#   standard    - standard CMS central sample naming; expected to resolve as-is
+#   unverified  - best-guess pattern; confirm with `resolve_samples.py --discover`
+#                 and replace with the real primary dataset names
+
+default_tiers: [MINIAODSIM, NANOAODSIM]   # AODSIM can be requested with --tier
+
+runs:
+  run2:
+    sqrt_s: "13 TeV"
+    campaign_globs: ["RunIISummer20UL*"]
+    eras:
+      2016preVFP:
+        MINIAODSIM: '^RunIISummer20UL16MiniAODAPV(v\d+)?-'
+        NANOAODSIM: '^RunIISummer20UL16NanoAODAPV(v\d+)?-'
+        AODSIM:     '^RunIISummer20UL16RECOAPV-'
+      2016postVFP:
+        MINIAODSIM: '^RunIISummer20UL16MiniAOD(v\d+)?-'
+        NANOAODSIM: '^RunIISummer20UL16NanoAOD(v\d+)?-'
+        AODSIM:     '^RunIISummer20UL16RECO-'
+      2017:
+        MINIAODSIM: '^RunIISummer20UL17MiniAOD(v\d+)?-'
+        NANOAODSIM: '^RunIISummer20UL17NanoAOD(v\d+)?-'
+        AODSIM:     '^RunIISummer20UL17RECO-'
+      2018:
+        MINIAODSIM: '^RunIISummer20UL18MiniAOD(v\d+)?-'
+        NANOAODSIM: '^RunIISummer20UL18NanoAOD(v\d+)?-'
+        AODSIM:     '^RunIISummer20UL18RECO-'
+  run3:
+    sqrt_s: "13.6 TeV"
+    campaign_globs: ["Run3Summer2*", "RunIII2024Summer24*"]
+    eras:
+      2022preEE:
+        MINIAODSIM: '^Run3Summer22MiniAOD(v\d+)?-'
+        NANOAODSIM: '^Run3Summer22NanoAOD(v\d+)?-'
+        AODSIM:     '^Run3Summer22(DRPremix|DR|RECO)-'
+      2022postEE:
+        MINIAODSIM: '^Run3Summer22EEMiniAOD(v\d+)?-'
+        NANOAODSIM: '^Run3Summer22EENanoAOD(v\d+)?-'
+        AODSIM:     '^Run3Summer22EE(DRPremix|DR|RECO)-'
+      2023preBPix:
+        MINIAODSIM: '^Run3Summer23MiniAOD(v\d+)?-'
+        NANOAODSIM: '^Run3Summer23NanoAOD(v\d+)?-'
+        AODSIM:     '^Run3Summer23(DRPremix|DR|RECO)-'
+      2023postBPix:
+        MINIAODSIM: '^Run3Summer23BPixMiniAOD(v\d+)?-'
+        NANOAODSIM: '^Run3Summer23BPixNanoAOD(v\d+)?-'
+        AODSIM:     '^Run3Summer23BPix(DRPremix|DR|RECO)-'
+      2024:
+        MINIAODSIM: '^RunIII2024Summer24MiniAOD(v\d+)?-'
+        NANOAODSIM: '^RunIII2024Summer24NanoAOD(v\d+)?-'
+        AODSIM:     '^RunIII2024Summer24(DRPremix|DR|RECO)-'
+
+processes:
+
+  # ---------------------------------------------------------------- signal --
+  # Signal = a mu+mu- pair from a common displaced vertex of a long-lived
+  # particle. Per-candidate labels come from truth matching both muons to the
+  # same LLP; unmatched pairs in signal MC are background-like.
+
+  hahm_zd:
+    role: signal
+    priority: core
+    status: unverified
+    description: >-
+      Hidden Abelian Higgs model, gg -> H(125) -> Z_D Z_D, Z_D -> mu mu.
+      Benchmark of CMS EXO-21-006 (Run 2) and EXO-23-014 (Run 3, 2022);
+      m(Z_D) 10-60 GeV, ctau set by the kinetic mixing epsilon.
+    patterns:
+      run2: ["*HTo2Zd*", "*HToZdZd*", "*HAHM*"]
+      run3: ["*HTo2Zd*", "*HToZdZd*", "*HAHM*"]
+
+  h_to_llp_scalars:
+    role: signal
+    priority: core
+    status: unverified
+    description: >-
+      Simplified model, heavy scalar H -> X X with long-lived X -> mu mu
+      (EXO-21-006). Covers m(X) above ~10 GeV and heavier parents than Z_D.
+    patterns:
+      run2: ["*HTo2LongLived*mu*", "*HTo2LongLived*Mu*"]
+      run3: ["*HTo2LongLived*mu*", "*HTo2LongLived*Mu*"]
+
+  rpv_neutralino_mumunu:
+    role: signal
+    priority: secondary
+    status: unverified
+    description: >-
+      RPV SUSY, squark -> q neutralino, neutralino -> mu mu nu (EXO-23-014).
+      Adds missing momentum and a boosted, asymmetric vertex topology.
+    patterns:
+      run2: ["*Squark*Neutralino*", "*RPV*Neutralino*", "*NeutralinoTo*Mu*"]
+      run3: ["*Squark*Neutralino*", "*RPV*Neutralino*", "*NeutralinoTo*Mu*"]
+
+  b_to_k_phi_mumu:
+    role: signal
+    priority: secondary
+    status: unverified
+    description: >-
+      B -> K phi, light long-lived scalar phi -> mu mu (scouting searches
+      EXO-20-014 / EXO-24-016). Extends signal coverage below ~10 GeV.
+    patterns:
+      run2: ["*ToKPhi*", "*toKPhi*"]
+      run3: ["*ToKPhi*", "*toKPhi*"]
+
+  # ------------------------------------------------------------ background --
+
+  qcd_muenriched:
+    role: background
+    priority: core
+    status: standard
+    description: >-
+      Muon-enriched QCD multijet. Dominant source of non-prompt muons:
+      semileptonic b/c decays (incl. b -> c -> mu sequential pairs with real
+      displaced vertices), pi/K decay in flight, random two-track crossings.
+    patterns:
+      run2: ["QCD_Pt-*_MuEnrichedPt5_TuneCP5_13TeV*", "QCD_Pt-20_MuEnrichedPt15_TuneCP5_13TeV*"]
+      run3: ["QCD_P*_MuEnrichedPt5_TuneCP5_13p6TeV*", "QCD_P*_MuEnrichedPt15_TuneCP5_13p6TeV*"]
+
+  nonprompt_jpsi:
+    role: background
+    priority: core
+    status: unverified
+    description: >-
+      b-hadron -> J/psi(mu mu) X. Genuinely displaced (~mm) dimuon vertices
+      at m = 3.1 GeV; the irreducible background at small displacement.
+    patterns:
+      run2: ["B*ToJpsi*", "B*toJpsi*"]
+      run3: ["B*ToJpsi*", "B*toJpsi*"]
+
+  drell_yan:
+    role: background
+    priority: core
+    status: standard
+    description: >-
+      Prompt opposite-sign dimuons (incl. low mass and Z -> tau tau -> mu mu).
+      Tests that the tagger does not fire on prompt vertices or resolution tails.
+    patterns:
+      run2:
+        - "DYJetsToLL_M-50_TuneCP5_13TeV-amcatnloFXFX-pythia8"
+        - "DYJetsToLL_M-10to50_TuneCP5_13TeV-madgraphMLM-pythia8"
+      run3:
+        - "DYto2L-2Jets_MLL-50_TuneCP5_13p6TeV_amcatnloFXFX-pythia8"
+        - "DYto2L-2Jets_MLL-10to50_TuneCP5_13p6TeV_amcatnloFXFX-pythia8"
+        - "DYto2Mu_MLL-*_TuneCP5_13p6TeV_powheg-pythia8"
+
+  ttbar:
+    role: background
+    priority: core
+    status: standard
+    description: >-
+      Top pairs. b-hadron decays plus prompt W muons give mixed
+      prompt/displaced pairs and heavy-flavour vertices at higher pT than QCD.
+    patterns:
+      run2:
+        - "TTTo2L2Nu_TuneCP5_13TeV-powheg-pythia8"
+        - "TTToSemiLeptonic_TuneCP5_13TeV-powheg-pythia8"
+      run3:
+        - "TTto2L2Nu_TuneCP5_13p6TeV_powheg-pythia8"
+        - "TTtoLNu2Q_TuneCP5_13p6TeV_powheg-pythia8"
+
+  prompt_quarkonia:
+    role: background
+    priority: secondary
+    status: unverified
+    description: >-
+      Prompt J/psi and Upsilon -> mu mu. Narrow resonances at the primary
+      vertex; useful to keep the tagger from learning the mass.
+    patterns:
+      run2: ["JpsiToMuMu*", "Jpsito2Mu*", "Upsilon*"]
+      run3: ["JpsiToMuMu*", "Jpsito2Mu*", "Upsilon*"]
+
+  single_top_tw:
+    role: background
+    priority: secondary
+    status: standard
+    description: tW production; same mechanisms as ttbar at lower rate.
+    patterns:
+      run2:
+        - "ST_tW_top_5f_*_TuneCP5_13TeV-powheg-pythia8"
+        - "ST_tW_antitop_5f_*_TuneCP5_13TeV-powheg-pythia8"
+      run3:
+        - "TWminusto*_TuneCP5_13p6TeV_powheg-pythia8"
+        - "TbarWplusto*_TuneCP5_13p6TeV_powheg-pythia8"
+
+  wjets:
+    role: background
+    priority: secondary
+    status: standard
+    description: W(mu nu) + a non-prompt muon from a jet; fake-vertex topology.
+    patterns:
+      run2: ["WJetsToLNu_TuneCP5_13TeV-madgraphMLM-pythia8"]
+      run3:
+        - "WtoLNu-2Jets_TuneCP5_13p6TeV_amcatnloFXFX-pythia8"
+        - "WtoLNu-4Jets_TuneCP5_13p6TeV_madgraphMLM-pythia8"
+
+  diboson:
+    role: background
+    priority: secondary
+    status: standard
+    description: Inclusive WW, WZ, ZZ; small, prompt multi-muon backgrounds.
+    patterns:
+      run2:
+        - "WW_TuneCP5_13TeV-pythia8"
+        - "WZ_TuneCP5_13TeV-pythia8"
+        - "ZZ_TuneCP5_13TeV-pythia8"
+      run3:
+        - "WW_TuneCP5_13p6TeV_pythia8"
+        - "WZ_TuneCP5_13p6TeV_pythia8"
+        - "ZZ_TuneCP5_13p6TeV_pythia8"
+
+  # --------------------------------------------------------------- control --
+
+  displaced_susy_uncorrelated:
+    role: control
+    priority: optional
+    status: unverified
+    description: >-
+      Two displaced muons that do NOT share a vertex (e.g. RPV stop -> b l).
+      Hard negatives: tests vertex compatibility, not just large impact parameter.
+    patterns:
+      run2: ["DisplacedSUSY*"]
+      run3: ["DisplacedSUSY*"]
+
+# Not covered by MC here: cosmic-ray muons. Use cosmic / NoBPTX data, as the
+# published analyses do.
+
+# Broad patterns for `resolve_samples.py --discover`, which lists matching
+# primary datasets so the `unverified` signal patterns can be replaced.
+discovery_patterns:
+  - "*Zd*"
+  - "*HAHM*"
+  - "*DarkPhoton*"
+  - "*LongLived*"
+  - "*LLP*"
+  - "*Displaced*"
+  - "*ctau*"
+  - "*cTau*"
+  - "*CTau*"
+  - "*Ctau*"
+  - "*ToKPhi*"
+  - "*toKPhi*"
+  - "*Neutralino*Mu*"
+  - "*HiddenValley*"
