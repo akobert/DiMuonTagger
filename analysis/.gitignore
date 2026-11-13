@@ -1,0 +1,4 @@
+# run outputs (hists.coffea, plots, tables, local skims)
+outputs/
+*.parquet
+.ipynb_checkpoints/

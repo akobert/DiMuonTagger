@@ -1,0 +1,21 @@
+# Local / test environment for analysis/ (Python >= 3.10):
+#   python3 -m pip install -r analysis/requirements.txt
+# On coffea-casa, use the image's coffea instead (see analysis/README.md).
+#
+# Tested with: coffea 2026.11.0, awkward 2.15.0, uproot 5.7.7, hist 2.12.1,
+# mplhep 1.2.1, pyarrow 25.0.1, numpy 2.2.6, pandas 2.3.3, fsspec 2026.9.0,
+# dask/distributed 2026.8.0, PyYAML 6.0.3, pytest 9.2.0 (Python 3.10.12);
+# also with numpy 1.26.4 and PyYAML 5.4.1 (system python3 + pip --user).
+
+coffea[dask]==2026.11.*   # [dask]: dask, distributed for --executor dask
+awkward
+uproot
+hist
+mplhep
+matplotlib
+numpy
+pandas
+pyarrow
+fsspec
+pyyaml
+pytest

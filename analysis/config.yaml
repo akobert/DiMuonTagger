@@ -1,0 +1,39 @@
+# Configuration for the coffea framework in analysis/dimuontagger.
+# Loaded by dimuontagger.config.load_config (scripts/run.py --config).
+
+truth:
+  # Long-lived particle pdgIds (sign ignored), listed by catalog process.
+  # Truth labelling uses the union of all lists for every dataset, so a
+  # background or control sample that contains one of these particles is
+  # labelled consistently.
+  #
+  # UNVERIFIED: these are the usual generator choices, not checked against the
+  # real samples. After the first run on real files, check them with the
+  # ancestor table from scripts/plot.py (ancestors.md), which lists the pdgIds
+  # found above gen-matched muons in every dataset. Also check that NanoAOD's
+  # GenPart pruning (finalGenParticles) keeps the LLP at all: if it is dropped,
+  # the muons' mother chain skips it and no candidate is labelled signal.
+  llp_pdgids_verified: false
+  llp_pdgids:
+    hahm_zd: [1023]                          # Z_D in the HAHM MadGraph model
+    h_to_llp_scalars: [6000113]              # X in Pythia H -> XX cards
+    rpv_neutralino_mumunu: [1000022]         # lightest neutralino
+    b_to_k_phi_mumu: [9000006]               # light scalar phi (guess)
+    displaced_susy_uncorrelated: [1000006]   # top squark (may hadronise into R-hadrons first)
+
+  # Maximum number of mother steps walked up from each gen-matched muon.
+  max_depth: 32
+
+  # CMSSW's isPrompt flag is false for muons from any hadron decay, including
+  # prompt J/psi and Upsilon. If true, a muon whose ancestors include a
+  # quarkonium but no open b/c hadron and no LLP also counts as prompt, so the
+  # prompt_quarkonia sample lands in `prompt` instead of `other`.
+  prompt_quarkonia: true
+
+skim:
+  # fsspec URL or local path for the per-candidate parquet skims, one file per
+  # chunk under <dest>/<dataset>/. null disables skims. scripts/run.py
+  # --skim-dest overrides this.
+  dest: null
+  # Passed to fsspec (e.g. credentials for s3://, or {} for local / root://).
+  storage_options: {}
