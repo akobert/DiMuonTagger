@@ -1,0 +1,34 @@
+# How to run the custom NANO step for each Run 3 era.
+#
+# Eras are named as in samples/catalog.yaml (runs.run3.eras), which also holds
+# the regexes that assign a MiniAOD dataset to an era. The MiniAOD format
+# version (the N in MiniAODvN) and the global tag are read from the dataset's
+# processed name; the GT can be overridden with make_cfg.py --conditions.
+#
+# `cmsdriver_era` is keyed by MiniAOD version. 124X MiniAODv3 inputs need the
+# run3_nanoAOD_124 modifier in 13_0 (13_0 relval step NANO_mc12.4).
+
+releases:
+  "13_0":
+    release_prefix: CMSSW_13_0_
+    scram_arch: el8_amd64_gcc11
+  "15_0":
+    release_prefix: CMSSW_15_0_
+    scram_arch: el9_amd64_gcc12
+
+eras:
+  2022preEE:
+    release: "13_0"
+    cmsdriver_era: {3: "Run3,run3_nanoAOD_124", 4: "Run3"}
+  2022postEE:
+    release: "13_0"
+    cmsdriver_era: {3: "Run3,run3_nanoAOD_124", 4: "Run3"}
+  2023preBPix:
+    release: "13_0"
+    cmsdriver_era: {4: "Run3_2023"}
+  2023postBPix:
+    release: "13_0"
+    cmsdriver_era: {4: "Run3_2023"}
+  2024:
+    release: "15_0"
+    cmsdriver_era: {6: "Run3_2024"}
