@@ -93,8 +93,13 @@ Each run creates `~/work/CMSSW_<series>_N`, links the package and runs
    python3 nanoaod/make_cfg.py --dataset <MiniAOD dataset> --filein root://cms-xrd-global.cern.ch//store/mc/<file>.root -n 200
    ```
    ```bash
-   cmsRun nanoaod/cfg/nano_<era>_MiniAODv<N>_<GT>_test_cfg.py
+   cmsRun nanoaod/cfg/nano_<era>_MiniAODv<N>_<GT>_test_<sample>_<hash>_cfg.py
    ```
+
+   `make_cfg.py` prints the exact name. Test configs are named per sample and
+   input file, so tests of different samples in the same era each get their own
+   config. Run each test in its own directory, because the output is always
+   `nano.root`.
 
 3. Check the output:
 

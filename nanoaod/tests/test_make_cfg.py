@@ -76,8 +76,27 @@ class TestDescribe(unittest.TestCase):
         for piece in ("--step NANO", "--mc", "--era Run3", "--conditions 130X_mcRun3_2022_realistic_v5",
                       "--customise " + make_cfg.CUSTOMISE, "--no_exec", "-n -1", "--eventcontent NANOAODSIM"):
             self.assertIn(piece, joined)
-        self.assertTrue(make_cfg.config_name(info).startswith("nano_2022preEE_MiniAODv4_"))
-        self.assertTrue(make_cfg.config_name(info, test=True).endswith("_test_cfg.py"))
+        self.assertEqual(make_cfg.config_name(info),
+                         "nano_2022preEE_MiniAODv4_130X_mcRun3_2022_realistic_v5_cfg.py")
+        test_name = make_cfg.config_name(info, ("root://x//store/a.root", 200))
+        self.assertTrue(test_name.startswith("nano_2022preEE_MiniAODv4_130X_mcRun3_2022_realistic_v5_test_QCD_PT"))
+        self.assertTrue(test_name.endswith("_cfg.py"))
+
+    def test_test_configs_are_per_sample_and_input(self):
+        # Same era / MiniAOD version / GT: the production config is shared,
+        # but test configs for different samples or inputs must not be.
+        tt = "/TTto2L2Nu_TuneCP5_13p6TeV_powheg-pythia8/Run3Summer22MiniAODv4-130X_mcRun3_2022_realistic_v5-v2/MINIAODSIM"
+        zd = ("/HTo2ZdTo2mu2x_MZd-20_Epsilon-5e-08_TuneCP5_13p6TeV_madgraph-pythia8/"
+              "Run3Summer22MiniAODv4-130X_mcRun3_2022_realistic_v5-v2/MINIAODSIM")
+        a, b = (make_cfg.describe(d, self.catalog, self.eras) for d in (tt, zd))
+        self.assertEqual(make_cfg.config_name(a), make_cfg.config_name(b))
+        inputs = ("root://x//store/f.root", 200)
+        names = {make_cfg.config_name(a, inputs), make_cfg.config_name(b, inputs),
+                 make_cfg.config_name(b, ("root://x//store/g.root", 200)),
+                 make_cfg.config_name(b, ("root://x//store/f.root", 500))}
+        self.assertEqual(len(names), 4)
+        self.assertEqual(make_cfg.config_name(b, inputs), make_cfg.config_name(b, inputs))  # stable
+        self.assertIn("_test_HTo2ZdTo2mu2x_MZd-20_Epsilon-5e-08", make_cfg.config_name(b, inputs))
 
     def test_release_series(self):
         self.assertEqual(make_cfg.release_series("CMSSW_13_0_17"), "13_0")

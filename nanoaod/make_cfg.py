@@ -22,6 +22,7 @@ skipped; run this once in each release area.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -94,9 +95,21 @@ def describe(dataset, catalog, eras, conditions=None):
     }
 
 
-def config_name(info, test=False):
-    return "nano_%s_MiniAODv%d_%s%s_cfg.py" % (
-        info["era"], info["miniaod_version"], info["global_tag"], "_test" if test else "")
+def config_name(info, test_inputs=None):
+    """Config file name. Production configs are shared by every dataset with
+    the same era, MiniAOD version and GT (CRAB sets the input).
+
+    test_inputs=(filein, nevents) names a test config. The name then also
+    identifies the sample and input, so tests of different samples in the
+    same era never share (and silently reuse) a config.
+    """
+    base = "nano_%s_MiniAODv%d_%s" % (info["era"], info["miniaod_version"], info["global_tag"])
+    if test_inputs is None:
+        return base + "_cfg.py"
+    key = "|".join([info["dataset"], test_inputs[0], str(test_inputs[1])])
+    digest = hashlib.sha1(key.encode()).hexdigest()[:6]
+    primary = re.sub(r"[^A-Za-z0-9_-]", "_", info["primary"])[:40]
+    return "%s_test_%s_%s_cfg.py" % (base, primary, digest)
 
 
 def cmsdriver_command(info, cfg_path, filein, nevents):
@@ -178,7 +191,7 @@ def main(argv=None):
             skipped += 1
             continue
         info["process"] = process
-        info["cfg"] = os.path.join(args.out_dir, config_name(info, test))
+        info["cfg"] = os.path.join(args.out_dir, config_name(info, (filein, args.nevents) if test else None))
         entries.append(info)
 
     os.makedirs(args.out_dir, exist_ok=True)
