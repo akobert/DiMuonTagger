@@ -127,7 +127,8 @@ up `GenPart_genPartIdxMother`, all legs of a chunk at once in numpy, for at most
 Details:
 - **LLP pdgIds** come from `truth.llp_pdgids` in [`config.yaml`](config.yaml).
   The union over all processes is used for every dataset. They are
-  **unverified** (1023 Z_D, 6000113 X, 1000022 χ̃⁰, 9000006 φ, 1000006 t̃). Check
+  **unverified** (1023 Z_D, 6000113 X, 1000022 χ̃⁰, 9000005 ALP, 9000006 φ,
+  1000006 t̃, 1000013/2000013 μ̃). Check
   them with `ancestors.md` on the first real files. Also confirm that
   NanoAOD's GenPart pruning keeps the LLP. If it is dropped, the muons' mother
   chain skips it and nothing is labelled `signal`.

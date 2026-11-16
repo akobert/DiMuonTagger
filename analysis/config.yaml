@@ -18,8 +18,10 @@ truth:
     hahm_zd: [1023]                          # Z_D in the HAHM MadGraph model
     h_to_llp_scalars: [6000113]              # X in Pythia H -> XX cards
     rpv_neutralino_mumunu: [1000022]         # lightest neutralino
+    ttbar_alp_mumu: [9000005]                # ALP in the common MadGraph ALP models (guess)
     b_to_k_phi_mumu: [9000006]               # light scalar phi (guess)
-    displaced_susy_uncorrelated: [1000006]   # top squark (may hadronise into R-hadrons first)
+    # Run 2: top squark (may hadronise into R-hadrons first); Run 3: smuon L/R
+    displaced_susy_uncorrelated: [1000006, 1000013, 2000013]
 
   # Maximum number of mother steps walked up from each gen-matched muon.
   max_depth: 32

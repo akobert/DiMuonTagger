@@ -9,9 +9,17 @@
 # each returned dataset is assigned to an era by the regexes under `eras`.
 #
 # status:
-#   standard    - standard CMS central sample naming; expected to resolve as-is
-#   unverified  - best-guess pattern; confirm with `resolve_samples.py --discover`
-#                 and replace with the real primary dataset names
+#   standard        - standard CMS central sample naming; expected to resolve as-is
+#   run3-confirmed  - Run 3 patterns taken from real names found by `--discover`
+#                     (2026-11-16); Run 2 patterns are still guesses
+#   unverified      - best-guess pattern; confirm with `resolve_samples.py --discover`
+#                     and replace with the real primary dataset names
+#
+# Run 3 signal names changed in 2024: parameters moved behind `_Par-`
+# (e.g. HTo2ZdTo2mu2x_MZd-20_ctau-10mm_... in 2022/23 vs
+# HTo2ZdTo2Mu2X_Par-MZd-20-Ctau-10mm_... in 2024), so most signals need two
+# patterns. All Run 3 signal patterns require 13p6TeV, which keeps out 14 TeV
+# samples that sit in the same campaigns but match no era.
 
 default_tiers: [MINIAODSIM, NANOAODSIM]   # AODSIM can be requested with --tier
 
@@ -71,36 +79,57 @@ processes:
   hahm_zd:
     role: signal
     priority: core
-    status: unverified
+    status: run3-confirmed
     description: >-
       Hidden Abelian Higgs model, gg -> H(125) -> Z_D Z_D, Z_D -> mu mu.
-      Benchmark of CMS EXO-21-006 (Run 2) and EXO-23-014 (Run 3, 2022);
-      m(Z_D) 10-60 GeV, ctau set by the kinetic mixing epsilon.
+      Benchmark of CMS EXO-21-006 (Run 2) and EXO-23-014 (Run 3, 2022).
+      Run 3: m(Z_D) from 0.5 GeV, ctau in the name. 2022/23 uses two names
+      (HTo2ZdTo2mu2x_MZd-..._ctau-... and HTo2ZdTo2Mu2X_MZd-...-Ctau-...),
+      2024 uses HTo2ZdTo2Mu2X_Par-.... (*HAHM* is not used: in Run 3 it only
+      matches HAHM a -> bb / a -> gamma gamma samples, no muons.)
     patterns:
       run2: ["*HTo2Zd*", "*HToZdZd*", "*HAHM*"]
-      run3: ["*HTo2Zd*", "*HToZdZd*", "*HAHM*"]
+      run3: ["HTo2ZdTo2mu2x_*_TuneCP5_13p6TeV*", "HTo2ZdTo2Mu2X_*_TuneCP5_13p6TeV*"]
 
   h_to_llp_scalars:
     role: signal
     priority: core
-    status: unverified
+    status: run3-confirmed
     description: >-
       Simplified model, heavy scalar H -> X X with long-lived X -> mu mu
       (EXO-21-006). Covers m(X) above ~10 GeV and heavier parents than Z_D.
+      Run 3 has 4mu (both X -> mu mu) and 2mu2jets (one X -> mu mu, one ->
+      jets) variants; a few 4mu points exist twice, with ..._13p6TeV_pythia8
+      and ..._13p6TeV-pythia8 names.
     patterns:
       run2: ["*HTo2LongLived*mu*", "*HTo2LongLived*Mu*"]
-      run3: ["*HTo2LongLived*mu*", "*HTo2LongLived*Mu*"]
+      run3: ["HTo2LongLivedTo4mu_*_13p6TeV*", "HTo2LongLivedTo2mu2jets_*_13p6TeV*",
+             "HTo2LongLivedTo4Mu_Par-*_13p6TeV*", "HTo2LongLivedTo2Mu2Jets_Par-*_13p6TeV*"]
 
   rpv_neutralino_mumunu:
     role: signal
     priority: secondary
-    status: unverified
+    status: run3-confirmed
     description: >-
-      RPV SUSY, squark -> q neutralino, neutralino -> mu mu nu (EXO-23-014).
-      Adds missing momentum and a boosted, asymmetric vertex topology.
+      RPV SUSY, squark -> q neutralino, neutralino -> l l nu (EXO-23-014;
+      mu mu nu and e e nu, 50% each). Adds missing momentum and a boosted,
+      asymmetric vertex topology.
     patterns:
       run2: ["*Squark*Neutralino*", "*RPV*Neutralino*", "*NeutralinoTo*Mu*"]
-      run3: ["*Squark*Neutralino*", "*RPV*Neutralino*", "*NeutralinoTo*Mu*"]
+      run3: ["SquarkToNeutralinoTo2LNu*_TuneCP5_13p6TeV*"]  # "2LNu-MSquark_" (2022/23), "2LNu_Par-" (2024)
+
+  ttbar_alp_mumu:
+    role: signal
+    priority: secondary
+    status: run3-confirmed
+    description: >-
+      ttbar events with a long-lived axion-like particle a -> mu mu, m(a)
+      0.35-60 GeV, ctau in the name. Covers the low-mass region in Run 3,
+      where no B -> K phi sample exists. Two variants per point: plain, and
+      with a generator filter on the muons' production vertex
+      (MuVtxR7Z10-MuFromALP in the name).
+    patterns:
+      run3: ["TTALPto2Mu*_TuneCP5_13p6TeV*"]
 
   b_to_k_phi_mumu:
     role: signal
@@ -109,9 +138,10 @@ processes:
     description: >-
       B -> K phi, light long-lived scalar phi -> mu mu (scouting searches
       EXO-20-014 / EXO-24-016). Extends signal coverage below ~10 GeV.
+      No Run 3 MiniAOD sample found by --discover (2026-11-16); see
+      ttbar_alp_mumu for low-mass Run 3 signal.
     patterns:
       run2: ["*ToKPhi*", "*toKPhi*"]
-      run3: ["*ToKPhi*", "*toKPhi*"]
 
   # ------------------------------------------------------------ background --
 
@@ -224,13 +254,16 @@ processes:
   displaced_susy_uncorrelated:
     role: control
     priority: optional
-    status: unverified
+    status: run3-confirmed
     description: >-
-      Two displaced muons that do NOT share a vertex (e.g. RPV stop -> b l).
-      Hard negatives: tests vertex compatibility, not just large impact parameter.
+      Two displaced muons that do NOT share a vertex. Hard negatives: tests
+      vertex compatibility, not just large impact parameter. Run 2: RPV
+      stop -> b l (DisplacedSUSY, unverified). Run 3: GMSB smuon -> mu
+      gravitino, pair-produced, so each muon comes from a different smuon
+      (no DisplacedSUSY samples exist in Run 3).
     patterns:
       run2: ["DisplacedSUSY*"]
-      run3: ["DisplacedSUSY*"]
+      run3: ["SMuonToMuGravitino_*_TuneCP5_13p6TeV*"]
 
 # Not covered by MC here: cosmic-ray muons. Use cosmic / NoBPTX data, as the
 # published analyses do.
@@ -252,3 +285,5 @@ discovery_patterns:
   - "*toKPhi*"
   - "*Neutralino*Mu*"
   - "*HiddenValley*"
+  - "*ALPto*"
+  - "*SMuon*"
