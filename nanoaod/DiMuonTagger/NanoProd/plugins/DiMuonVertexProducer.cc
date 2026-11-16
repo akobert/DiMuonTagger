@@ -50,17 +50,19 @@
 
 namespace {
 
-  constexpr double kMuonMass = 0.1056583755;  // GeV
-  constexpr int kPatMuon = 0;
-  constexpr int kDisplacedMuon = 1;
-  constexpr float kUnset = -1.f;
+  // kDm prefix: ROOT puts k-names such as kUnset (TError.h) in the global
+  // namespace, which makes unprefixed names here ambiguous.
+  constexpr double kDmMuonMass = 0.1056583755;  // GeV
+  constexpr int kDmPatMuon = 0;
+  constexpr int kDmDisplacedMuon = 1;
+  constexpr float kDmUnset = -1.f;
 
   struct Leg {
     const pat::Muon* muon;
     const reco::Track* track;
     reco::TransientTrack ttrack;
     int index;  // position in its input collection = row in its NanoAOD table
-    int type;   // kPatMuon or kDisplacedMuon
+    int type;   // kDmPatMuon or kDmDisplacedMuon
   };
 
   // Symmetric 3x3 covariance stored as {xx, xy, xz, yy, yz, zz}.
@@ -106,8 +108,8 @@ namespace {
   }
 
   struct Distance {
-    float value = kUnset;
-    float error = kUnset;
+    float value = kDmUnset;
+    float error = kDmUnset;
   };
 
   // Length of d (transverse or 3D) and its uncertainty, propagating cov.
@@ -124,7 +126,7 @@ namespace {
       var += dz * dz * c[5] + 2. * dx * dz * c[2] + 2. * dy * dz * c[4];
     var /= l2;
     out.value = std::sqrt(l2);
-    out.error = var > 0. ? std::sqrt(var) : kUnset;
+    out.error = var > 0. ? std::sqrt(var) : kDmUnset;
     return out;
   }
 
@@ -137,7 +139,7 @@ namespace {
   }
 
   reco::Candidate::LorentzVector muonP4(const GlobalVector& p) {
-    const double e = std::sqrt(p.mag2() + kMuonMass * kMuonMass);
+    const double e = std::sqrt(p.mag2() + kDmMuonMass * kDmMuonMass);
     return reco::Candidate::LorentzVector(p.x(), p.y(), p.z(), e);
   }
 
@@ -199,7 +201,7 @@ void DiMuonVertexProducer::collectLegs(const edm::View<pat::Muon>& muons,
     if (mu.pt() < minPt_ || std::abs(mu.eta()) > maxAbsEta_)
       continue;
     const reco::Track* track = nullptr;
-    if (type == kDisplacedMuon && displacedTrack_ == "outer") {
+    if (type == kDmDisplacedMuon && displacedTrack_ == "outer") {
       if (mu.outerTrack().isNonnull())
         track = mu.outerTrack().get();
     } else {
@@ -239,7 +241,7 @@ pat::CompositeCandidate DiMuonVertexProducer::makeCandidate(const Leg& a,
 
   // Two-track point of closest approach: always attempted, so candidates whose
   // Kalman fit fails (e.g. far outside the tracker) still get a position.
-  float dca = kUnset;
+  float dca = kDmUnset;
   bool cpValid = false;
   GlobalPoint cp;
   {
@@ -255,7 +257,7 @@ pat::CompositeCandidate DiMuonVertexProducer::makeCandidate(const Leg& a,
   cand.addUserFloat("cpy", cpValid ? cp.y() : 0.f);
   cand.addUserFloat("cpz", cpValid ? cp.z() : 0.f);
   cand.addUserFloat("lxyCP",
-                    cpValid ? std::hypot(cp.x() - bs.x(cp.z()), cp.y() - bs.y(cp.z())) : kUnset);
+                    cpValid ? std::hypot(cp.x() - bs.x(cp.z()), cp.y() - bs.y(cp.z())) : kDmUnset);
 
   // Kalman vertex fit.
   TransientVertex tv;
@@ -277,8 +279,8 @@ pat::CompositeCandidate DiMuonVertexProducer::makeCandidate(const Leg& a,
   GlobalPoint pos;
 
   Distance lxyBS, lxyPV, l3dPV;
-  float vxErr = kUnset, vyErr = kUnset, vzErr = kUnset;
-  float chi2 = kUnset, ndof = kUnset, prob = kUnset;
+  float vxErr = kDmUnset, vyErr = kDmUnset, vzErr = kDmUnset;
+  float chi2 = kDmUnset, ndof = kDmUnset, prob = kDmUnset;
 
   if (valid) {
     pos = tv.position();
@@ -289,7 +291,7 @@ pat::CompositeCandidate DiMuonVertexProducer::makeCandidate(const Leg& a,
     vzErr = std::sqrt(err.czz());
     chi2 = tv.totalChiSquared();
     ndof = tv.degreesOfFreedom();
-    prob = ndof > 0.f ? ChiSquaredProbability(chi2, ndof) : kUnset;
+    prob = ndof > 0.f ? ChiSquaredProbability(chi2, ndof) : kDmUnset;
 
     const TrajectoryStateClosestToPoint s1 = l1.ttrack.trajectoryStateClosestToPoint(pos);
     const TrajectoryStateClosestToPoint s2 = l2.ttrack.trajectoryStateClosestToPoint(pos);
@@ -363,9 +365,9 @@ void DiMuonVertexProducer::produce(edm::StreamID, edm::Event& iEvent, const edm:
   const reco::Vertex* pv = pvs.empty() ? nullptr : &pvs.front();
 
   std::vector<Leg> legs;
-  collectLegs(iEvent.get(muonToken_), kPatMuon, builder, legs);
+  collectLegs(iEvent.get(muonToken_), kDmPatMuon, builder, legs);
   if (!displacedTag_.label().empty())
-    collectLegs(iEvent.get(displacedToken_), kDisplacedMuon, builder, legs);
+    collectLegs(iEvent.get(displacedToken_), kDmDisplacedMuon, builder, legs);
 
   const KalmanVertexFitter fitter(true);
   for (size_t i = 0; i < legs.size() && out->size() < maxCandidates_; ++i)
