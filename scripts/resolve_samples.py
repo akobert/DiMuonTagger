@@ -14,13 +14,15 @@ Typical use:
     # 2. Resolve everything in the catalog (MINIAODSIM + NANOAODSIM)
     python3 scripts/resolve_samples.py
 
-    # Only some processes / runs / tiers, without per-dataset event counts
+    # Only some processes / runs / tiers, without event counts or site checks
     python3 scripts/resolve_samples.py --process hahm_zd qcd_muenriched \
-        --run run3 --tier MINIAODSIM --no-summary
+        --run run3 --tier MINIAODSIM --no-summary --no-sites
 
 Outputs (default samples/resolved/):
-    datasets.csv / datasets.json   every dataset found, with era and event counts
-    coverage.txt                   process x era table of preferred datasets
+    datasets.csv / datasets.json   every dataset found, with era, event counts and
+                                   disk/tape sites (on_disk false = tape only)
+    coverage.txt                   process x era table: on-disk/total preferred datasets
+    tape_only.txt                  preferred datasets with no disk copy (need a recall)
     lists/<tier>/<era>/<process>.txt   preferred dataset names, one per line
     discovery_<run>_<tier>.txt     (--discover) candidate signal primaries
 
@@ -94,6 +96,22 @@ class DAS:
 
     def summary(self, dataset):
         return parse_summary(self.query("summary dataset=%s" % dataset, as_json=True))
+
+    def sites(self, dataset):
+        """Sites holding (part of) the dataset, split into disk and tape."""
+        names = sorted({line.strip() for line in self.query("site dataset=%s" % dataset).splitlines()
+                        if re.match(r"^T\d_\w+$", line.strip())})
+        return split_sites(names)
+
+
+# Storage that cannot serve jobs directly: tape and transfer endpoints.
+_NOT_DISK = re.compile(r"_(Tape|MSS|Buffer|Export)$")
+
+
+def split_sites(names):
+    disk = [n for n in names if not _NOT_DISK.search(n)]
+    tape = [n for n in names if _NOT_DISK.search(n)]
+    return {"on_disk": bool(disk), "disk_sites": disk, "tape_sites": tape}
 
 
 def parse_summary(text):
@@ -258,12 +276,21 @@ def resolve(cat, das, args, processes, runs, tiers):
     for rec in records.values():
         rec.update(summaries.get(rec["dataset"], {"nevents": None, "nfiles": None, "size_gb": None}))
 
+    if args.no_sites:
+        sites = {}
+    else:
+        print("Checking disk/tape sites for %d datasets ..." % len(unique))
+        sites, site_failures = run_parallel(das.sites, unique, args.workers)
+        failures.update({"sites " + k: v for k, v in site_failures.items()})
+    for rec in records.values():
+        rec.update(sites.get(rec["dataset"], {"on_disk": None, "disk_sites": [], "tape_sites": []}))
+
     rows = sorted(records.values(), key=lambda r: (
         ["signal", "background", "control"].index(r["role"]), r["process"], r["run"],
         era_index(cat, r["run"], r["era"]), r["tier"], r["dataset"]))
     write_outputs(cat, args, rows, processes, runs, tiers, failed_scopes)
 
-    empty =[(n, r, p) for n, r, t, p, _ in jobs if pattern_hits[(n, r, p)] == 0]
+    empty = [(n, r, p) for n, r, t, p, _ in jobs if pattern_hits[(n, r, p)] == 0]
     if empty:
         print("\nPatterns that matched nothing (fix names in the catalog or check --discover):")
         for name, run, primary in sorted(set(empty)):
@@ -291,17 +318,19 @@ def era_index(cat, run, era):
 def write_outputs(cat, args, rows, processes, runs, tiers, failed_scopes=frozenset()):
     os.makedirs(args.out, exist_ok=True)
     fields = ["role", "priority", "process", "run", "era", "tier", "preferred",
-              "nevents", "nfiles", "size_gb", "dataset"]
+              "nevents", "nfiles", "size_gb", "on_disk", "disk_sites", "tape_sites", "dataset"]
     with open(os.path.join(args.out, "datasets.csv"), "w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(dict(rec, disk_sites=" ".join(rec["disk_sites"]),
+                              tape_sites=" ".join(rec["tape_sites"])) for rec in rows)
     with open(os.path.join(args.out, "datasets.json"), "w") as handle:
         json.dump({"generated": datetime.datetime.now().isoformat(timespec="seconds"),
                    "catalog": os.path.relpath(args.catalog, REPO),
                    "status": args.status, "datasets": rows}, handle, indent=1)
 
     write_lists(cat, args.out, rows, processes, runs, tiers, failed_scopes)
+    write_tape_only(args.out, rows)
 
     table = coverage_table(cat, rows, processes, runs, tiers)
     with open(os.path.join(args.out, "coverage.txt"), "w") as handle:
@@ -311,6 +340,27 @@ def write_outputs(cat, args, rows, processes, runs, tiers, failed_scopes=frozens
     if args.process or args.role or args.run or args.tier:
         print("Filtered run: datasets.csv, datasets.json and coverage.txt cover only the "
               "processes, runs and tiers queried this time.")
+
+
+def write_tape_only(out, rows):
+    """tape_only.txt: preferred datasets with no disk copy (they need a recall
+    before jobs can read them). Removed when sites were not checked, so it never
+    describes an older run."""
+    path = os.path.join(out, "tape_only.txt")
+    checked = [rec for rec in rows if rec["preferred"] and rec["on_disk"] is not None]
+    if not checked:
+        if os.path.exists(path):
+            os.remove(path)
+        return
+    tape = [rec for rec in checked if not rec["on_disk"]]
+    with open(path, "w") as handle:
+        handle.write("# preferred datasets without a disk copy: process era tier size_gb tape_sites dataset\n")
+        for rec in tape:
+            handle.write("%s %s %s %s %s %s\n" % (rec["process"], rec["era"], rec["tier"], rec["size_gb"],
+                                                  ",".join(rec["tape_sites"]) or "-", rec["dataset"]))
+    size = sum(rec["size_gb"] or 0 for rec in tape)
+    print("\n%d of %d preferred datasets have no disk copy (%.0f GB): %s"
+          % (len(tape), len(checked), size, display_path(path)))
 
 
 def list_path(out, tier, era, process):
@@ -367,27 +417,41 @@ def display_path(path):
 
 
 def coverage_table(cat, rows, processes, runs, tiers):
-    """Per process and era: preferred datasets and events (M) for each tier."""
-    counts = defaultdict(lambda: [0, 0])
+    """Per process and era: preferred datasets and events (M) for each tier.
+
+    With site information each cell reads `on-disk/total (events)`.
+    """
+    counts = defaultdict(lambda: [0, 0, 0, 0])  # n, events, n on disk, n with site info
     for rec in rows:
         if rec["preferred"]:
             cell = counts[(rec["process"], rec["era"], rec["tier"])]
             cell[0] += 1
             cell[1] += rec["nevents"] or 0
-    lines = ["Coverage: preferred datasets (events in millions) per era; '-' = none found", ""]
+            if rec.get("on_disk") is not None:
+                cell[3] += 1
+                cell[2] += int(rec["on_disk"])
+    with_sites = any(c[3] for c in counts.values())
+    lines = ["Coverage: preferred datasets per era%s (events in millions); '-' = none found"
+             % (" as on-disk/total" if with_sites else ""), ""]
+    width = 17
     for run in runs:
         eras = list(cat["runs"][run]["eras"])
         for tier in tiers:
-            header = "%-28s" % ("%s %s" % (run, tier)) + "".join("%15s" % e for e in eras)
+            header = "%-28s" % ("%s %s" % (run, tier)) + "".join("%*s" % (width, e) for e in eras)
             lines += [header, "-" * len(header)]
             for name in processes:
                 if run not in cat["processes"][name].get("patterns", {}):
                     continue
                 cells = []
                 for era in eras:
-                    n, ev = counts.get((name, era, tier), (0, 0))
-                    cells.append("%15s" % ("-" if n == 0 else
-                                           "%d (%.1f)" % (n, ev / 1e6) if ev else "%d" % n))
+                    n, ev, n_disk, n_known = counts.get((name, era, tier), (0, 0, 0, 0))
+                    if n == 0:
+                        text = "-"
+                    else:
+                        text = "%d/%d" % (n_disk, n) if n_known == n else "%d" % n
+                        if ev:
+                            text += " (%.1f)" % (ev / 1e6)
+                    cells.append("%*s" % (width, text))
                 lines.append("%-28s" % name + "".join(cells))
             lines.append("")
     return "\n".join(lines)
@@ -464,6 +528,8 @@ def main(argv=None):
                         help="DAS dataset status, e.g. VALID, PRODUCTION or '*' (default VALID)")
     parser.add_argument("--no-summary", action="store_true",
                         help="skip per-dataset event/file counts (much faster)")
+    parser.add_argument("--no-sites", action="store_true",
+                        help="skip the per-dataset disk/tape site check")
     parser.add_argument("--workers", type=int, default=6, help="parallel dasgoclient calls")
     parser.add_argument("--dry-run", action="store_true", help="print DAS queries and exit")
     parser.add_argument("--dasgoclient", default="dasgoclient", help="dasgoclient executable")

@@ -69,11 +69,18 @@ voms-proxy-init -voms cms -rfc -valid 192:00
 
    It writes to `samples/resolved/`:
    - `datasets.csv` / `datasets.json`: every VALID dataset found, with era,
-     tier, events, files and size.
-   - `coverage.txt`: process × era table. Gaps show where a sample is
-     missing, for example signal that only exists for 2022.
+     tier, events, files, size, and where it is stored: `on_disk`,
+     `disk_sites` and `tape_sites`.
+   - `coverage.txt`: process × era table. Each cell is on-disk/total
+     preferred datasets, plus events in millions. Gaps show where a sample is
+     missing, for example signal that only exists for 2022. A cell like `0/3`
+     means the samples exist but only on tape.
+   - `tape_only.txt`: preferred datasets with no disk copy, with their size and
+     tape site. Jobs, including CRAB, can't read these until they are recalled
+     to disk (a Rucio rule).
    - `lists/<tier>/<era>/<process>.txt`: preferred dataset names, ready for
-     job submission.
+     job submission. These still include tape-only datasets, so check
+     `tape_only.txt` before submitting.
 
    *Preferred* means the newest MiniAOD/NanoAOD format version in that era
    (e.g. NanoAODv9 over v2, MiniAODv4 over v3). Extension samples (`_ext1`)
@@ -82,8 +89,14 @@ voms-proxy-init -voms cms -rfc -valid 192:00
    fit no era.
 
 Useful options: `--process`, `--role`, `--run run3`, `--tier AODSIM`,
-`--no-summary` (skip event counts, much faster), `--dry-run` (print the DAS
-queries), `--status PRODUCTION` (samples still being produced).
+`--no-summary` (skip event counts) and `--no-sites` (skip the disk/tape check;
+each costs one DAS query per dataset, so both together are much faster),
+`--dry-run` (print the DAS queries), `--status PRODUCTION` (samples still being
+produced).
+
+Disk vs tape comes from DAS `site dataset=`. Sites ending in `_Tape`, `_MSS`,
+`_Buffer` or `_Export` count as not on disk. A disk site may hold only part of a
+dataset, so `on_disk` means "at least partly on disk".
 
 **Reruns.** `datasets.csv`, `datasets.json` and `coverage.txt` always describe
 only the latest run, so a filtered run (`--process`, `--run`, …) leaves them
