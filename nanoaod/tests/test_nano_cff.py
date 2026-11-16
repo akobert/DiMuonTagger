@@ -21,8 +21,11 @@ def expected_branches():
     raise AssertionError("EXPECTED not found in check_nano.py")
 
 
-def variables(table):
-    return table.variables.parameters_()
+def variables(table, external=True):
+    out = table.variables.parameters_()
+    if external and hasattr(table, "externalVariables"):
+        out.update(table.externalVariables.parameters_())
+    return out
 
 
 class TestDimuonVertexCff(unittest.TestCase):
@@ -80,6 +83,21 @@ class TestDimuonVertexCff(unittest.TestCase):
         self.assertTrue(used, "no userFloat/userInt expressions found")
         self.assertEqual(used - produced, set(), "table reads fields the producer never sets")
         self.assertEqual(produced - used, set(), "producer sets fields the table never stores")
+
+    def test_external_variables_match_cpp_products(self):
+        with open(os.path.join(PKG, "plugins", "DiMuonVertexProducer.cc")) as handle:
+            source = handle.read()
+        # produces<edm::ValueMap<T>>("label") -> {label: T}
+        products = dict((label, ctype) for ctype, label in
+                        re.findall(r'produces<edm::ValueMap<(\w+)>>\("(\w+)"\)', source))
+        self.assertTrue(products)
+        ext = self.cff.displacedMuonTable.externalVariables.parameters_()
+        self.assertEqual(len(ext), len(products))
+        for name, var in ext.items():
+            module, label = var.src.value.split(":")
+            self.assertEqual(module, "diMuonVertices", name)
+            self.assertIn(label, products, name)
+            self.assertEqual(var.type.value, products[label], name)  # "int"/"float" read ValueMap<int/float>
 
     def test_cpp_parameters_match_config(self):
         with open(os.path.join(PKG, "plugins", "DiMuonVertexProducer.cc")) as handle:

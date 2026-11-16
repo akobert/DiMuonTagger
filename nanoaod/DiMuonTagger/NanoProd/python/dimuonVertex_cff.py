@@ -8,7 +8,7 @@ import FWCore.ParameterSet.Config as cms
 
 import PhysicsTools.NanoAOD.common_cff as _common
 import PhysicsTools.NanoAOD.muons_cff as _muons
-from PhysicsTools.NanoAOD.common_cff import Var
+from PhysicsTools.NanoAOD.common_cff import ExtVar, Var
 
 
 def _uf(name, doc, precision=-1):
@@ -58,6 +58,15 @@ displacedMuonTable = cms.EDProducer(
         normChi2=_outer("normalizedChi2()", -1, float, "outer-track chi2/ndof (-1: none)", precision=10),
         ptErr=_outer("ptError()", -1, float, "outer-track pT uncertainty (-1: none)", precision=10),
     ),
+    # Filled by diMuonVertices, which matches every displaced muon to the
+    # nearest standard muon and replaces it within displacedMatchDeltaR.
+    externalVariables=cms.PSet(
+        muonIdx=ExtVar(cms.InputTag("diMuonVertices", "dsaMuonIdx"), int,
+                       doc="index of the Muon that replaces this displaced muon in DiMuonVtx "
+                           "(nearest Muon within displacedMatchDeltaR), -1 if none"),
+        muonDR=ExtVar(cms.InputTag("diMuonVertices", "dsaMuonDR"), float,
+                      doc="deltaR to the nearest Muon (-1 if the event has none)", precision=10),
+    ),
 )
 
 # Same matcher as the standard Muon table, with a looser pT match because
@@ -85,6 +94,9 @@ diMuonVertices = cms.EDProducer(
     minPt=cms.double(3.0),
     maxAbsEta=cms.double(2.4),
     displacedTrack=cms.string("outer"),
+    # Displaced muons within this deltaR of a standard muon are copies of it:
+    # they are replaced by the standard muon, not used as legs (0 disables).
+    displacedMatchDeltaR=cms.double(0.1),
     maxCandidates=cms.uint32(50),
 )
 

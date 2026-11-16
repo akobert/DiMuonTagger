@@ -103,7 +103,13 @@ def _make_common_cff(cms):
         return cms.PSet(expr=cms.string(expr), type=cms.string(py_types.get(valtype, valtype)),
                         doc=cms.string(doc if doc else expr), precision=cms.int32(precision))
 
+    def ExtVar(tag, valtype, doc=None, precision=-1):
+        src = tag if isinstance(tag, cms.InputTag) else cms.InputTag(tag)
+        return cms.PSet(src=src, type=cms.string(py_types.get(valtype, valtype)),
+                        doc=cms.string(doc if doc else src.value), precision=cms.int32(precision))
+
     mod.Var = Var
+    mod.ExtVar = ExtVar
     mod.P3Vars = cms.PSet(pt=Var("pt", float), phi=Var("phi", float, precision=12),
                           eta=Var("eta", float, precision=12))
     mod.P4Vars = cms.PSet(mod.P3Vars, mass=Var("mass", float, precision=10))

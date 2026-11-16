@@ -22,10 +22,11 @@ def _jagged(counts, value, dtype):
     return ak.unflatten(np.full(int(sum(counts)), value, dtype=dtype), counts)
 
 
-def write_file(path, leg_idx=(0, 0), drop=None):
+def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, drop=None):
     """Two events: 2 muons + 1 displaced muon, then 1 muon + 0 displaced; one pair each.
 
-    leg_idx = (mu1Idx of the event-0 pair, mu2Idx of the event-1 pair).
+    leg_idx = (mu1Idx of the event-0 pair, mu2Idx of the event-1 pair);
+    dsa_muon_idx = DisplacedMuon_muonIdx of the event-0 displaced muon.
     """
     n_mu, n_dsa, n_vtx, n_gen = [2, 1], [1, 0], [1, 1], [3, 2]
     from check_nano import EXPECTED
@@ -37,6 +38,8 @@ def write_file(path, leg_idx=(0, 0), drop=None):
             out[name] = _jagged(counts, 0, dtype)
         return out
 
+    dsa = fields("DisplacedMuon", n_dsa)
+    dsa["muonIdx"] = ak.unflatten(np.array([dsa_muon_idx], np.int32), n_dsa)
     vtx = fields("DiMuonVtx", n_vtx)
     # event 0: Muon leg_idx[0] + DisplacedMuon 0; event 1: Muon 0 + Muon leg_idx[1]
     vtx["mu1Idx"] = ak.unflatten(np.array([leg_idx[0], 0], np.int16), n_vtx)
@@ -48,7 +51,7 @@ def write_file(path, leg_idx=(0, 0), drop=None):
     vtx["lxyCP"] = ak.unflatten(np.array([2.4, 0.01], np.float32), n_vtx)
     branches = {
         "Muon": ak.zip({"pt": _jagged(n_mu, 10.0, np.float32), "genPartIdx": _jagged(n_mu, 0, np.int16)}),
-        "DisplacedMuon": ak.zip(fields("DisplacedMuon", n_dsa)),
+        "DisplacedMuon": ak.zip(dsa),
         "DiMuonVtx": ak.zip(vtx),
         "GenPart": ak.zip(fields("GenPart", n_gen)),
     }
@@ -85,7 +88,15 @@ class TestCheckNano(unittest.TestCase):
     def test_index_out_of_range(self):
         code, out = self.run_check(leg_idx=(0, 1))  # event 1 has a single muon: index 1 is bad
         self.assertEqual(code, 1, out)
-        self.assertIn("1 DiMuonVtx legs point outside", out)
+        self.assertIn("1 indices point outside", out)
+
+    def test_displaced_muon_match_index(self):
+        code, out = self.run_check(dsa_muon_idx=1)  # event 0 has 2 muons: valid replacement
+        self.assertEqual(code, 0, out)
+        self.assertIn("100.0% replaced by a Muon", out)
+        code, out = self.run_check(dsa_muon_idx=2)  # out of range
+        self.assertEqual(code, 1, out)
+        self.assertIn("1 indices point outside", out)
 
     def test_missing_branch(self):
         code, out = self.run_check(drop=("DiMuonVtx", "lxyCP"))

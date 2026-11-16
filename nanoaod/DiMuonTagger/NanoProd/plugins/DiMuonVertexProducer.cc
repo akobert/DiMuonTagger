@@ -10,6 +10,14 @@
 // collections that feed the Muon and DisplacedMuon tables (without a cut), so
 // mu1Idx/mu2Idx are row indices into those tables.
 //
+// Displaced muons are often a second reconstruction of a muon that is also in
+// the standard collection. Pairing such a copy with its original, or with
+// another prompt muon, gives spurious far-displaced vertices. Each displaced
+// muon is therefore matched to the nearest standard muon in deltaR; within
+// displacedMatchDeltaR it is replaced by that muon (not used as a leg). The
+// match is also written as ValueMaps (dsaMuonIdx, dsaMuonDR) for the
+// DisplacedMuon table.
+//
 // Builds in CMSSW_13_0_X and CMSSW_15_0_X.
 
 #include <cmath>
@@ -20,6 +28,7 @@
 
 #include "CommonTools/Statistics/interface/ChiSquaredProbability.h"
 #include "DataFormats/BeamSpot/interface/BeamSpot.h"
+#include "DataFormats/Common/interface/ValueMap.h"
 #include "DataFormats/Common/interface/View.h"
 #include "DataFormats/GeometryCommonDetAlgo/interface/GlobalError.h"
 #include "DataFormats/GeometryVector/interface/GlobalPoint.h"
@@ -152,10 +161,13 @@ public:
   static void fillDescriptions(edm::ConfigurationDescriptions&);
 
 private:
+  // `replacedBy` (optional): per muon, index of the standard muon that replaces
+  // it, or -1; replaced muons are not used as legs.
   void collectLegs(const edm::View<pat::Muon>& muons,
                    int type,
                    const TransientTrackBuilder& builder,
-                   std::vector<Leg>& legs) const;
+                   std::vector<Leg>& legs,
+                   const std::vector<int>* replacedBy = nullptr) const;
   pat::CompositeCandidate makeCandidate(const Leg& a,
                                         const Leg& b,
                                         const reco::BeamSpot& bs,
@@ -171,6 +183,7 @@ private:
   const double minPt_;
   const double maxAbsEta_;
   const std::string displacedTrack_;
+  const double displacedMatchDeltaR_;
   const unsigned int maxCandidates_;
 };
 
@@ -183,22 +196,29 @@ DiMuonVertexProducer::DiMuonVertexProducer(const edm::ParameterSet& cfg)
       minPt_(cfg.getParameter<double>("minPt")),
       maxAbsEta_(cfg.getParameter<double>("maxAbsEta")),
       displacedTrack_(cfg.getParameter<std::string>("displacedTrack")),
+      displacedMatchDeltaR_(cfg.getParameter<double>("displacedMatchDeltaR")),
       maxCandidates_(cfg.getParameter<unsigned int>("maxCandidates")) {
   if (displacedTrack_ != "outer" && displacedTrack_ != "best")
     throw cms::Exception("Configuration") << "displacedTrack must be 'outer' or 'best', got '" << displacedTrack_
                                           << "'";
-  if (!displacedTag_.label().empty())
-    displacedToken_ = consumes<edm::View<pat::Muon>>(displacedTag_);
   produces<pat::CompositeCandidateCollection>();
+  if (!displacedTag_.label().empty()) {
+    displacedToken_ = consumes<edm::View<pat::Muon>>(displacedTag_);
+    produces<edm::ValueMap<int>>("dsaMuonIdx");
+    produces<edm::ValueMap<float>>("dsaMuonDR");
+  }
 }
 
 void DiMuonVertexProducer::collectLegs(const edm::View<pat::Muon>& muons,
                                        int type,
                                        const TransientTrackBuilder& builder,
-                                       std::vector<Leg>& legs) const {
+                                       std::vector<Leg>& legs,
+                                       const std::vector<int>* replacedBy) const {
   for (size_t i = 0; i < muons.size(); ++i) {
     const pat::Muon& mu = muons[i];
     if (mu.pt() < minPt_ || std::abs(mu.eta()) > maxAbsEta_)
+      continue;
+    if (replacedBy != nullptr && (*replacedBy)[i] >= 0)
       continue;
     const reco::Track* track = nullptr;
     if (type == kDmDisplacedMuon && displacedTrack_ == "outer") {
@@ -364,10 +384,47 @@ void DiMuonVertexProducer::produce(edm::StreamID, edm::Event& iEvent, const edm:
   const reco::VertexCollection& pvs = iEvent.get(pvToken_);
   const reco::Vertex* pv = pvs.empty() ? nullptr : &pvs.front();
 
+  const edm::View<pat::Muon>& muons = iEvent.get(muonToken_);
   std::vector<Leg> legs;
-  collectLegs(iEvent.get(muonToken_), kDmPatMuon, builder, legs);
-  if (!displacedTag_.label().empty())
-    collectLegs(iEvent.get(displacedToken_), kDmDisplacedMuon, builder, legs);
+  collectLegs(muons, kDmPatMuon, builder, legs);
+
+  if (!displacedTag_.label().empty()) {
+    const edm::Handle<edm::View<pat::Muon>> displaced = iEvent.getHandle(displacedToken_);
+
+    // Nearest standard muon (any pT) for every displaced muon. Within
+    // displacedMatchDeltaR it replaces the displaced muon as a leg.
+    std::vector<int> replacedBy(displaced->size(), -1);
+    std::vector<float> nearestDR(displaced->size(), kDmUnset);
+    for (size_t j = 0; j < displaced->size(); ++j) {
+      int best = -1;
+      double bestDR = 0.;
+      for (size_t i = 0; i < muons.size(); ++i) {
+        const double dr = reco::deltaR((*displaced)[j], muons[i]);
+        if (best < 0 || dr < bestDR) {
+          best = static_cast<int>(i);
+          bestDR = dr;
+        }
+      }
+      if (best >= 0) {
+        nearestDR[j] = bestDR;
+        if (bestDR < displacedMatchDeltaR_)
+          replacedBy[j] = best;
+      }
+    }
+    collectLegs(*displaced, kDmDisplacedMuon, builder, legs, &replacedBy);
+
+    auto idxMap = std::make_unique<edm::ValueMap<int>>();
+    edm::ValueMap<int>::Filler idxFiller(*idxMap);
+    idxFiller.insert(displaced, replacedBy.begin(), replacedBy.end());
+    idxFiller.fill();
+    iEvent.put(std::move(idxMap), "dsaMuonIdx");
+
+    auto drMap = std::make_unique<edm::ValueMap<float>>();
+    edm::ValueMap<float>::Filler drFiller(*drMap);
+    drFiller.insert(displaced, nearestDR.begin(), nearestDR.end());
+    drFiller.fill();
+    iEvent.put(std::move(drMap), "dsaMuonDR");
+  }
 
   const KalmanVertexFitter fitter(true);
   for (size_t i = 0; i < legs.size() && out->size() < maxCandidates_; ++i)
@@ -389,6 +446,8 @@ void DiMuonVertexProducer::fillDescriptions(edm::ConfigurationDescriptions& desc
   desc.add<double>("maxAbsEta", 2.4)->setComment("leg |eta| limit");
   desc.add<std::string>("displacedTrack", "outer")
       ->setComment("track for displaced muons: 'outer' (muon-system only) or 'best'");
+  desc.add<double>("displacedMatchDeltaR", 0.1)
+      ->setComment("a displaced muon within this deltaR of a standard muon is replaced by it (0 disables)");
   desc.add<unsigned int>("maxCandidates", 50)->setComment("maximum pairs stored per event");
   descriptions.add("diMuonVertexProducer", desc);
 }

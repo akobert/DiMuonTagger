@@ -21,7 +21,8 @@ import uproot
 EXPECTED = {
     "GenPart": ["vx", "vy", "vz"],
     "DisplacedMuon": ["pt", "eta", "phi", "mass", "charge", "isGlobal", "isStandalone", "isTracker",
-                      "nValidMuonHits", "nMuonStations", "normChi2", "ptErr", "genPartIdx", "genPartFlav"],
+                      "nValidMuonHits", "nMuonStations", "normChi2", "ptErr", "genPartIdx", "genPartFlav",
+                      "muonIdx", "muonDR"],
     "DiMuonVtx": ["pt", "eta", "phi", "mass", "charge", "mu1Idx", "mu2Idx", "mu1Type", "mu2Type",
                   "valid", "momentaAtVertex", "vx", "vy", "vz", "vxErr", "vyErr", "vzErr",
                   "chi2", "ndof", "prob", "lxyBS", "lxyBSErr", "lxyPV", "lxyPVErr", "l3dPV", "l3dPVErr",
@@ -45,13 +46,19 @@ def missing_branches(keys):
 
 
 def index_errors(ev):
-    """Number of DiMuonVtx legs whose index is outside its target collection."""
+    """Number of indices pointing outside their target collection.
+
+    DiMuonVtx legs must point at an existing Muon/DisplacedMuon row, and
+    DisplacedMuon_muonIdx must be -1 or an existing Muon row.
+    """
     bad = 0
     for leg in ("mu1", "mu2"):
         idx = ev["DiMuonVtx_%sIdx" % leg]
         typ = ev["DiMuonVtx_%sType" % leg]
         size = ak.where(typ == 0, ev["nMuon"], ev["nDisplacedMuon"])
         bad += int(ak.sum((idx < 0) | (idx >= size) | ((typ != 0) & (typ != 1))))
+    idx = ev["DisplacedMuon_muonIdx"]
+    bad += int(ak.sum((idx < -1) | (idx >= ev["nMuon"])))
     return bad
 
 
@@ -62,19 +69,28 @@ def summarize(ev):
     valid = ak.to_numpy(vtx_valid).astype(bool)
     lxy = ak.to_numpy(ak.flatten(ev["DiMuonVtx_lxyBS"]))
     lxy_cp = ak.to_numpy(ak.flatten(ev["DiMuonVtx_lxyCP"]))
+    dr = ak.to_numpy(ak.flatten(ev["DiMuonVtx_deltaR"]))
+    same_sign = np.abs(ak.to_numpy(ak.flatten(ev["DiMuonVtx_charge"]))) == 2
     n_events = len(ev)
     n_cand = len(valid)
+    replaced = ak.flatten(ev["DisplacedMuon_muonIdx"]) >= 0
     print("events: %d   candidates: %d (%.2f / event)" % (n_events, n_cand, n_cand / max(n_events, 1)))
-    print("muons / event: %.2f   displaced muons / event: %.2f"
-          % (ak.mean(ev["nMuon"]), ak.mean(ev["nDisplacedMuon"])))
+    print("muons / event: %.2f   displaced muons / event: %.2f (%.1f%% replaced by a Muon)"
+          % (ak.mean(ev["nMuon"]), ak.mean(ev["nDisplacedMuon"]),
+             100 * ak.mean(replaced) if len(replaced) else 0.))
     if n_cand == 0:
         return
-    print("\n%-22s %8s %10s %12s" % ("pair type", "pairs", "fit valid", "has CP"))
+    # "dup-like": same-sign legs within dR < 0.2, i.e. probably one muon reconstructed twice
+    print("\n%-22s %8s %10s %8s %10s %14s"
+          % ("pair type", "pairs", "fit valid", "has CP", "dup-like", "median lxyBS"))
     for name in ("Muon-Muon", "Muon-Displaced", "Displaced-Displaced"):
         sel = np.array([PAIR_TYPES[(a, b)] == name for a, b in zip(t1, t2)], dtype=bool)
         if sel.any():
-            print("%-22s %8d %9.1f%% %11.1f%%"
-                  % (name, sel.sum(), 100 * valid[sel].mean(), 100 * (lxy_cp[sel] >= 0).mean()))
+            fitted = sel & valid
+            median = "%.3g cm" % np.median(lxy[fitted]) if fitted.any() else "-"
+            print("%-22s %8d %9.1f%% %7.1f%% %9.1f%% %14s"
+                  % (name, sel.sum(), 100 * valid[sel].mean(), 100 * (lxy_cp[sel] >= 0).mean(),
+                     100 * (same_sign[sel] & (dr[sel] < 0.2)).mean(), median))
     if valid.any():
         q = np.percentile(lxy[valid], [10, 50, 90, 99])
         print("\nlxyBS of valid fits [cm]: 10%%=%.3g 50%%=%.3g 90%%=%.3g 99%%=%.3g" % tuple(q))
@@ -101,13 +117,14 @@ def main(argv=None):
             print("MISSING branches: %s" % ", ".join(missing))
             status = 1
             continue
-        names = ["nMuon", "nDisplacedMuon"] + [k for k in keys if k.startswith(("DiMuonVtx_", "nDiMuonVtx"))]
+        names = ["nMuon", "nDisplacedMuon", "DisplacedMuon_muonIdx"] + \
+            [k for k in keys if k.startswith(("DiMuonVtx_", "nDiMuonVtx"))]
         if "Muon_genPartIdx" in keys:
             names += ["Muon_genPartIdx", "DisplacedMuon_genPartIdx"]
         ev = tree.arrays(names)
         bad = index_errors(ev)
         if bad:
-            print("ERROR: %d DiMuonVtx legs point outside Muon/DisplacedMuon" % bad)
+            print("ERROR: %d indices point outside Muon/DisplacedMuon" % bad)
             status = 1
         summarize(ev)
         print()
