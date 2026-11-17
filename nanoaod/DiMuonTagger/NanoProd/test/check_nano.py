@@ -4,10 +4,11 @@
     python3 check_nano.py nano.root [more.root ...]
 
 Checks that the custom branches exist, that DiMuonVtx leg indices point at
-existing Muon/DisplacedMuon rows, and prints a short summary (candidates per
-event, pair types, fit success, Lxy quantiles, gen-match rate). Exits non-zero
-if a branch is missing or an index is out of range. Needs uproot and awkward
-(both in CMSSW's Python 3).
+existing Muon/DisplacedMuon rows, and that no leg is the dropped copy of a
+displaced/standard duplicate. Prints a short summary (candidates per event,
+duplicates resolved, pair types, fit success, Lxy quantiles, gen-match rate).
+Exits non-zero if a branch is missing or a check fails. Needs uproot and
+awkward (both in CMSSW's Python 3).
 """
 
 import argparse
@@ -22,7 +23,7 @@ EXPECTED = {
     "GenPart": ["vx", "vy", "vz"],
     "DisplacedMuon": ["pt", "eta", "phi", "mass", "charge", "isGlobal", "isStandalone", "isTracker",
                       "nValidMuonHits", "nMuonStations", "normChi2", "ptErr", "genPartIdx", "genPartFlav",
-                      "muonIdx", "muonDR"],
+                      "muonIdx", "replaced", "muonDR"],
     "DiMuonVtx": ["pt", "eta", "phi", "mass", "charge", "mu1Idx", "mu2Idx", "mu1Type", "mu2Type",
                   "valid", "momentaAtVertex", "vx", "vy", "vz", "vxErr", "vyErr", "vzErr",
                   "chi2", "ndof", "prob", "lxyBS", "lxyBSErr", "lxyPV", "lxyPVErr", "l3dPV", "l3dPVErr",
@@ -62,6 +63,37 @@ def index_errors(ev):
     return bad
 
 
+def _offsets(counts):
+    counts = ak.to_numpy(counts).astype(np.int64)
+    return np.concatenate([[0], np.cumsum(counts)[:-1]]).astype(np.int64), counts
+
+
+def dropped_copy_legs(ev):
+    """Number of DiMuonVtx legs that are the dropped copy of a duplicate.
+
+    A displaced muon with replaced == 1 must not be a leg; neither may the Muon
+    it duplicates (muonIdx) when it was kept (replaced == 0).
+    Assumes index_errors(ev) == 0.
+    """
+    off_mu, n_mu = _offsets(ev["nMuon"])
+    off_dsa, n_dsa = _offsets(ev["nDisplacedMuon"])
+    replaced = ak.to_numpy(ak.flatten(ev["DisplacedMuon_replaced"])).astype(bool)
+    match = ak.to_numpy(ak.flatten(ev["DisplacedMuon_muonIdx"])).astype(np.int64)
+    dsa_event = np.repeat(np.arange(len(n_dsa)), n_dsa)
+    keep_dsa = (match >= 0) & ~replaced
+    dropped_mu = set((off_mu[dsa_event[keep_dsa]] + match[keep_dsa]).tolist())
+    _, n_vtx = _offsets(ev["nDiMuonVtx"])
+    vtx_event = np.repeat(np.arange(len(n_vtx)), n_vtx)
+    bad = 0
+    for leg in ("mu1", "mu2"):
+        idx = ak.to_numpy(ak.flatten(ev["DiMuonVtx_%sIdx" % leg])).astype(np.int64)
+        typ = ak.to_numpy(ak.flatten(ev["DiMuonVtx_%sType" % leg])).astype(np.int64)
+        dsa = typ == 1
+        bad += int(replaced[off_dsa[vtx_event[dsa]] + idx[dsa]].sum())
+        bad += sum(g in dropped_mu for g in (off_mu[vtx_event[~dsa]] + idx[~dsa]).tolist())
+    return bad
+
+
 def summarize(ev):
     vtx_valid = ak.flatten(ev["DiMuonVtx_valid"])
     t1 = ak.to_numpy(ak.flatten(ev["DiMuonVtx_mu1Type"])).astype(int)
@@ -73,11 +105,16 @@ def summarize(ev):
     same_sign = np.abs(ak.to_numpy(ak.flatten(ev["DiMuonVtx_charge"]))) == 2
     n_events = len(ev)
     n_cand = len(valid)
-    replaced = ak.flatten(ev["DisplacedMuon_muonIdx"]) >= 0
+    matched = ak.to_numpy(ak.flatten(ev["DisplacedMuon_muonIdx"])) >= 0
+    replaced = ak.to_numpy(ak.flatten(ev["DisplacedMuon_replaced"])).astype(bool)
     print("events: %d   candidates: %d (%.2f / event)" % (n_events, n_cand, n_cand / max(n_events, 1)))
-    print("muons / event: %.2f   displaced muons / event: %.2f (%.1f%% replaced by a Muon)"
-          % (ak.mean(ev["nMuon"]), ak.mean(ev["nDisplacedMuon"]),
-             100 * ak.mean(replaced) if len(replaced) else 0.))
+    print("muons / event: %.2f   displaced muons / event: %.2f"
+          % (ak.mean(ev["nMuon"]), ak.mean(ev["nDisplacedMuon"])))
+    if len(matched):
+        pct = lambda sel: 100.0 * sel.sum() / len(matched)
+        print("displaced muons duplicating a Muon: %.1f%% (replaced by the Muon: %.1f%%, "
+              "kept instead of the Muon: %.1f%%)"
+              % (pct(matched), pct(matched & replaced), pct(matched & ~replaced)))
     if n_cand == 0:
         return
     # "dup-like": same-sign legs within dR < 0.2, i.e. probably one muon reconstructed twice
@@ -117,7 +154,7 @@ def main(argv=None):
             print("MISSING branches: %s" % ", ".join(missing))
             status = 1
             continue
-        names = ["nMuon", "nDisplacedMuon", "DisplacedMuon_muonIdx"] + \
+        names = ["nMuon", "nDisplacedMuon", "DisplacedMuon_muonIdx", "DisplacedMuon_replaced"] + \
             [k for k in keys if k.startswith(("DiMuonVtx_", "nDiMuonVtx"))]
         if "Muon_genPartIdx" in keys:
             names += ["Muon_genPartIdx", "DisplacedMuon_genPartIdx"]
@@ -126,6 +163,11 @@ def main(argv=None):
         if bad:
             print("ERROR: %d indices point outside Muon/DisplacedMuon" % bad)
             status = 1
+        else:
+            dropped = dropped_copy_legs(ev)
+            if dropped:
+                print("ERROR: %d DiMuonVtx legs are the dropped copy of a duplicate muon" % dropped)
+                status = 1
         summarize(ev)
         print()
     return status

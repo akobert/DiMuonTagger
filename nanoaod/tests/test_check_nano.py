@@ -22,11 +22,12 @@ def _jagged(counts, value, dtype):
     return ak.unflatten(np.full(int(sum(counts)), value, dtype=dtype), counts)
 
 
-def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, drop=None):
+def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, dsa_replaced=0, drop=None):
     """Two events: 2 muons + 1 displaced muon, then 1 muon + 0 displaced; one pair each.
 
-    leg_idx = (mu1Idx of the event-0 pair, mu2Idx of the event-1 pair);
-    dsa_muon_idx = DisplacedMuon_muonIdx of the event-0 displaced muon.
+    The event-0 pair is Muon[leg_idx[0]] + DisplacedMuon[0]; the event-1 pair
+    is Muon[0] + Muon[leg_idx[1]]. dsa_muon_idx / dsa_replaced are
+    DisplacedMuon_muonIdx / _replaced of the event-0 displaced muon.
     """
     n_mu, n_dsa, n_vtx, n_gen = [2, 1], [1, 0], [1, 1], [3, 2]
     from check_nano import EXPECTED
@@ -40,6 +41,7 @@ def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, drop=None):
 
     dsa = fields("DisplacedMuon", n_dsa)
     dsa["muonIdx"] = ak.unflatten(np.array([dsa_muon_idx], np.int32), n_dsa)
+    dsa["replaced"] = ak.unflatten(np.array([dsa_replaced], np.int32), n_dsa)
     vtx = fields("DiMuonVtx", n_vtx)
     # event 0: Muon leg_idx[0] + DisplacedMuon 0; event 1: Muon 0 + Muon leg_idx[1]
     vtx["mu1Idx"] = ak.unflatten(np.array([leg_idx[0], 0], np.int16), n_vtx)
@@ -91,12 +93,25 @@ class TestCheckNano(unittest.TestCase):
         self.assertIn("1 indices point outside", out)
 
     def test_displaced_muon_match_index(self):
-        code, out = self.run_check(dsa_muon_idx=1)  # event 0 has 2 muons: valid replacement
+        # displaced muon kept, its copy Muon[1] dropped; Muon[1] is not a leg: fine
+        code, out = self.run_check(dsa_muon_idx=1, dsa_replaced=0)
         self.assertEqual(code, 0, out)
-        self.assertIn("100.0% replaced by a Muon", out)
+        self.assertIn("duplicating a Muon: 100.0% (replaced by the Muon: 0.0%, kept instead of the Muon: 100.0%)", out)
         code, out = self.run_check(dsa_muon_idx=2)  # out of range
         self.assertEqual(code, 1, out)
         self.assertIn("1 indices point outside", out)
+
+    def test_replaced_displaced_muon_used_as_leg(self):
+        # DisplacedMuon[0] was replaced by Muon[1] but is still a leg of the event-0 pair
+        code, out = self.run_check(dsa_muon_idx=1, dsa_replaced=1)
+        self.assertEqual(code, 1, out)
+        self.assertIn("1 DiMuonVtx legs are the dropped copy", out)
+
+    def test_dropped_muon_used_as_leg(self):
+        # DisplacedMuon[0] was kept instead of Muon[0], but Muon[0] is a leg of the event-0 pair
+        code, out = self.run_check(dsa_muon_idx=0, dsa_replaced=0)
+        self.assertEqual(code, 1, out)
+        self.assertIn("1 DiMuonVtx legs are the dropped copy", out)
 
     def test_missing_branch(self):
         code, out = self.run_check(drop=("DiMuonVtx", "lxyCP"))

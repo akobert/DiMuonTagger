@@ -58,14 +58,16 @@ displacedMuonTable = cms.EDProducer(
         normChi2=_outer("normalizedChi2()", -1, float, "outer-track chi2/ndof (-1: none)", precision=10),
         ptErr=_outer("ptError()", -1, float, "outer-track pT uncertainty (-1: none)", precision=10),
     ),
-    # Filled by diMuonVertices, which matches every displaced muon to the
-    # nearest standard muon and replaces it within displacedMatchDeltaR.
+    # Filled by diMuonVertices, which resolves displaced/standard duplicates
+    # (same charge, deltaR < displacedMatchDeltaR) before pairing.
     externalVariables=cms.PSet(
         muonIdx=ExtVar(cms.InputTag("diMuonVertices", "dsaMuonIdx"), int,
-                       doc="index of the Muon that replaces this displaced muon in DiMuonVtx "
-                           "(nearest Muon within displacedMatchDeltaR), -1 if none"),
+                       doc="index of the Muon that is a copy of this displaced muon, -1 if none"),
+        replaced=ExtVar(cms.InputTag("diMuonVertices", "dsaReplaced"), int,
+                        doc="1: this displaced muon is replaced by Muon[muonIdx] in DiMuonVtx; "
+                            "0: it is kept (and Muon[muonIdx], if any, is not used)"),
         muonDR=ExtVar(cms.InputTag("diMuonVertices", "dsaMuonDR"), float,
-                      doc="deltaR to the nearest Muon (-1 if the event has none)", precision=10),
+                      doc="deltaR to the nearest Muon of any charge (-1 if the event has none)", precision=10),
     ),
 )
 
@@ -94,9 +96,13 @@ diMuonVertices = cms.EDProducer(
     minPt=cms.double(3.0),
     maxAbsEta=cms.double(2.4),
     displacedTrack=cms.string("outer"),
-    # Displaced muons within this deltaR of a standard muon are copies of it:
-    # they are replaced by the standard muon, not used as legs (0 disables).
-    displacedMatchDeltaR=cms.double(0.1),
+    # A displaced and a standard muon with the same charge within this deltaR
+    # are copies of one muon (0 disables). Only one copy becomes a leg: the
+    # standard muon if it passes preferredMuonCut, else the displaced muon.
+    # Same charge keeps the opposite-sign partner from one LLP decay apart.
+    displacedMatchDeltaR=cms.double(0.2),
+    displacedMatchSameCharge=cms.bool(True),
+    preferredMuonCut=cms.string("isGlobalMuon"),
     maxCandidates=cms.uint32(50),
 )
 

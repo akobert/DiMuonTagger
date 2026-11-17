@@ -7,7 +7,7 @@ runs on Run 3 MiniAOD and writes standard NanoAOD plus three additions:
 | Collection | What it adds |
 |---|---|
 | `GenPart` | `vx, vy, vz`: production vertex at full precision. An LLP's decay position is its daughter muons' production vertex. |
-| `DisplacedMuon` | Muons from `slimmedDisplacedMuons` with pt > 3 GeV: kinematics, muon type flags, outer-track hits, stations, χ²/ndof, pT error, gen match (`genPartIdx`, `genPartFlav`), and the match to the standard muons (`muonIdx`, `muonDR`). |
+| `DisplacedMuon` | Muons from `slimmedDisplacedMuons` with pt > 3 GeV: kinematics, muon type flags, outer-track hits, stations, χ²/ndof, pT error, gen match (`genPartIdx`, `genPartFlav`), and the match to the standard muons (`muonIdx`, `replaced`, `muonDR`). |
 | `DiMuonVtx` | One row per muon pair: Muon–Muon, Muon–Displaced and Displaced–Displaced. Each row has leg indices and types, a Kalman vertex fit (position and errors, χ², probability), Lxy and its error w.r.t. beam spot and PV, 3D distance to the PV, pointing angles, the two-track DCA and crossing point (`lxyCP`, filled even when the fit fails), leg momenta at the vertex, and per-leg dxy w.r.t. the beam spot. |
 
 `mu1Idx`/`mu2Idx` index `Muon` when `mu*Type == 0` and `DisplacedMuon` when
@@ -21,14 +21,33 @@ the Muon–Displaced pairs were a muon paired with its own copy. Those pairs, an
 pairs of copies of two prompt muons, had median fitted Lxy of 7–10 cm, against
 0.02 cm for Muon–Muon pairs.
 
-The fix: each displaced muon is matched to the nearest `Muon` in ΔR. If that
-muon is within `displacedMatchDeltaR` (default 0.1, set on `diMuonVertices` in
-`dimuonVertex_cff.py`; 0 turns it off), the displaced muon is replaced by it and
-never used as a `DiMuonVtx` leg. `DisplacedMuon_muonIdx` holds the replacing
-`Muon` (−1 if none), and `DisplacedMuon_muonDR` the distance to the nearest
-`Muon`, so the cut can be re-tuned later. `check_nano.py` reports the
-replaced fraction and a "dup-like" column per pair type (same-sign, ΔR < 0.2),
-which should be near zero for Muon–Displaced pairs.
+The fix: duplicates are resolved before pairing, and only one copy of each
+muon becomes a `DiMuonVtx` leg. The settings are on `diMuonVertices` in
+`dimuonVertex_cff.py`.
+- **What counts as a copy:** a displaced muon and a `Muon` with the same charge
+  within ΔR < 0.2 (`displacedMatchSameCharge`, `displacedMatchDeltaR`; 0 turns
+  matching off).
+  - In signal, a muon's nearest `Muon` is often the *other* muon from the same
+    decay, about 0.2–0.8 away and with the opposite charge. The charge
+    requirement stops that partner from being taken for a copy.
+  - Matching is one-to-one, closest pairs first.
+- **Which copy is kept:** the `Muon` if it passes `preferredMuonCut` (default
+  `isGlobalMuon`: it has a tracker track), otherwise the displaced muon.
+  - A first version used ΔR < 0.1 with any charge and always kept the `Muon`.
+    In a HAHM sample (20 GeV, cτ = 1 m), 40% of those replacements swapped a
+    displaced muon (72% gen-matched) for a muon-system-only `Muon` (41%) or a
+    tracker-only `Muon` (2%).
+  - A muon-system-only `Muon` is refitted as if it came from the beam spot,
+    which biases it for displaced decays.
+
+Branches:
+- `DisplacedMuon_muonIdx`: the `Muon` copy, −1 if none.
+- `DisplacedMuon_replaced`: 1 if the `Muon` was kept, 0 if the displaced muon was.
+- `DisplacedMuon_muonDR`: ΔR to the nearest `Muon` of any charge, for retuning.
+
+`check_nano.py` reports how many displaced muons had a copy and which copy was
+kept. It fails if a dropped copy appears in any pair. Its "dup-like" column
+(same-sign, ΔR < 0.2) should be near zero for Muon–Displaced pairs.
 
 Run 3 only: Run 2 UL MiniAOD has no displaced-muon collection.
 
