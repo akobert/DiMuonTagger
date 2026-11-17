@@ -46,6 +46,7 @@ nanoaod/
   make_cfg.py                            cmsDriver config generation + cfg/index.json
   crab/submit.py                         CRAB submission from cfg/index.json
   setup.sh                               creates the CMSSW area and builds
+  test_sample.sh                         one-dataset test: disk file, config, cmsRun, check_nano
   tests/                                 offline tests (no CMSSW needed)
 ```
 
@@ -87,31 +88,44 @@ Each run creates `~/work/CMSSW_<series>_N`, links the package and runs
    edmDumpEventContent root://cms-xrd-global.cern.ch//store/mc/<file>.root | grep -i displacedmuon
    ```
 
-2. Make a 200-event test config and run it:
+2. Run the custom NanoAOD on one dataset and check the output, in one step:
 
    ```bash
-   python3 nanoaod/make_cfg.py --dataset <MiniAOD dataset> --filein root://cms-xrd-global.cern.ch//store/mc/<file>.root -n 200
+   bash nanoaod/test_sample.sh <MiniAOD dataset>
    ```
+
+   [`test_sample.sh`](test_sample.sh):
+   - refuses a tape-only dataset and takes an input file stored at a disk site;
+   - makes a test config with `make_cfg.py`;
+   - runs `cmsRun` on 500 events (log in `cmsRun.log`);
+   - runs `check_nano.py` on the output.
+
+   It stops with DAS's or cmsRun's own message when a step fails. The output
+   goes to `${DIMUON_TEST_DIR:-~/dimuon_tests}/<primary>__<campaign>/nano.root`
+   (one folder per sample and campaign), and the script prints the `scp`
+   command to copy it.
+
+   Options: `-n EVENTS`, `--out DIR`, `--file LFN` to use a given file and skip
+   DAS, and `--redirector URL`. For example, to keep tests on EOS:
+
    ```bash
-   cmsRun nanoaod/cfg/nano_<era>_MiniAODv<N>_<GT>_test_<sample>_<hash>_cfg.py
+   export DIMUON_TEST_DIR=/eos/user/<u>/<username>/cmssw/test
    ```
 
-   `make_cfg.py` prints the exact name. Test configs are named per sample and
-   input file, so tests of different samples in the same era each get their own
-   config. Run each test in its own directory, because the output is always
-   `nano.root`.
+   Running the steps by hand works too: `make_cfg.py --dataset … --filein …
+   -n 200` prints the test config path, then run `cmsRun <config>` and
+   `check_nano.py nano.root` in a folder of its own. Test configs are named
+   per sample and input file, so different samples never share one.
 
-3. Check the output:
+Checked by running in CMSSW_13_0_25 on 2022 ttbar MiniAODv4:
+- the package builds;
+- MiniAOD keeps the displaced muons' `outerTrack`, so Displaced legs are fitted;
+- the customisation adds every custom branch.
 
-   ```bash
-   python3 nanoaod/DiMuonTagger/NanoProd/test/check_nano.py nano.root
-   ```
-
-Things the offline checks here could not confirm, which compiling and running will settle:
-- the 13_0 `TransientVertex` interface;
-- that MiniAOD's slimmer keeps the displaced muons' `outerTrack`;
-- how often Kalman fits fail far outside the tracker (watch the "fit valid" column of `check_nano.py`);
-- that cmsDriver applies `--customise` after the standard NanoAOD customisation.
+Still to check:
+- the CMSSW_15_0 build and 2024 inputs;
+- 124X MiniAODv3 inputs;
+- how often Kalman fits fail far outside the tracker on signal (the "fit valid" column of `check_nano.py`).
 
 ## Production with CRAB
 
