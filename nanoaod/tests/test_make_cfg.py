@@ -122,6 +122,14 @@ class TestMainDryRun(unittest.TestCase):
             self.assertEqual(len(commands), len(DATASETS))  # one distinct (era, version, GT) each
             self.assertIn("%d datasets -> %d configs" % (len(DATASETS), len(DATASETS)), out.getvalue())
 
+    def test_dataset_argument_is_stripped(self):
+        dataset = next(iter(DATASETS)) + "\r"  # as cut from a CRLF file
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(out):
+            code = make_cfg.main(["--dataset", dataset, "--out-dir", tmp, "--dry-run", "--any-release"])
+        self.assertEqual(code, 0)
+        self.assertIn("1 datasets -> 1 configs", out.getvalue())
+
     def test_release_filter(self):
         with tempfile.TemporaryDirectory() as tmp:
             os.environ["CMSSW_VERSION"] = "CMSSW_15_0_2"

@@ -96,6 +96,8 @@ class TestListFiles(_ResolverCase):
     def test_full_run_writes_lists(self):
         code, _ = self.resolve([QCD_22, QCD_23, TT_22])
         self.assertEqual(code, 0)
+        with open(os.path.join(self.out, "datasets.csv"), "rb") as handle:
+            self.assertNotIn(b"\r", handle.read())  # awk/cut would keep it on the dataset name
         self.assertEqual(self.read_list("2022preEE", "qcd_muenriched"), [QCD_22])
         self.assertEqual(self.read_list("2023preBPix", "qcd_muenriched"), [QCD_23])
         self.assertEqual(self.read_list("2022preEE", "ttbar"), [TT_22])

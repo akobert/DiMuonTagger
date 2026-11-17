@@ -207,7 +207,7 @@ def write_cutflow(record, outdir):
     header = ["dataset", "process", "era"] + list(CUTFLOW_COLUMNS)
     os.makedirs(outdir, exist_ok=True)
     with open(os.path.join(outdir, "cutflow.csv"), "w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=header)
+        writer = csv.DictWriter(handle, fieldnames=header, lineterminator="\n")  # no \r for shell tools
         writer.writeheader()
         writer.writerows(rows)
     text = "# Cutflow\n\nRaw counts; `sumw` is the sum of genWeight over all events.\n\n" \

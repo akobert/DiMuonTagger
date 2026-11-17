@@ -320,7 +320,9 @@ def write_outputs(cat, args, rows, processes, runs, tiers, failed_scopes=frozens
     fields = ["role", "priority", "process", "run", "era", "tier", "preferred",
               "nevents", "nfiles", "size_gb", "on_disk", "disk_sites", "tape_sites", "dataset"]
     with open(os.path.join(args.out, "datasets.csv"), "w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        # lineterminator: the csv default is \r\n, which leaves a stray \r on the
+        # last column (the dataset name) for awk/cut and shell scripts.
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore", lineterminator="\n")
         writer.writeheader()
         writer.writerows(dict(rec, disk_sites=" ".join(rec["disk_sites"]),
                               tape_sites=" ".join(rec["tape_sites"])) for rec in rows)

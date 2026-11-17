@@ -179,7 +179,8 @@ def main(argv=None):
     if current is None and not (args.dry_run and args.any_release):
         sys.exit("Run inside a CMSSW area (cmsenv), or use --dry-run --any-release.")
 
-    pairs = read_lists(args.lists) if args.lists else [(d, None) for d in args.dataset]
+    # strip(): names pasted or cut from files can carry a trailing \r or spaces
+    pairs = read_lists(args.lists) if args.lists else [(d.strip(), None) for d in args.dataset]
     entries, skipped, errors = [], 0, []
     for dataset, process in pairs:
         try:
