@@ -10,12 +10,14 @@
 # $CMSSW_BASE/src/DiMuonTagger/NanoProd, so edits here are picked up by `scram b`.
 # Set DIMUON_COPY=1 to copy it instead (e.g. if CRAB does not follow the link).
 #
-# CMSSW_13_0_X (el8) on an el9 host such as lxplus: run this inside `cmssw-el8`.
+# Both release series are used in their production architecture, el8 (15_0 also
+# has el9 builds, but official 2024 NanoAOD used el8). On an el9 host such as
+# lxplus, run this inside `cmssw-el8`.
 set -euo pipefail
 
 # All variables are dm_-prefixed: sourcing cmsset_default.sh unsets common
 # names such as `arch`.
-usage() { sed -n '2,13p' "$0"; exit 1; }
+usage() { sed -n '2,15p' "$0"; exit 1; }
 [ $# -ge 1 ] || usage
 dm_target=$1
 dm_workdir=${2:-$PWD}
@@ -24,7 +26,7 @@ dm_cmsset=${DIMUON_CMSSET:-/cvmfs/cms.cern.ch/cmsset_default.sh}
 
 case "$dm_target" in
   2022_23) dm_series=13_0; dm_arch=${DIMUON_SCRAM_ARCH:-el8_amd64_gcc11} ;;
-  2024)    dm_series=15_0; dm_arch=${DIMUON_SCRAM_ARCH:-el9_amd64_gcc12} ;;
+  2024)    dm_series=15_0; dm_arch=${DIMUON_SCRAM_ARCH:-el8_amd64_gcc12} ;;
   *) usage ;;
 esac
 

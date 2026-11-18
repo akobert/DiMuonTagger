@@ -108,7 +108,11 @@ The global tag comes from the MiniAOD processed name, e.g.
 
 ## Setup (lxplus)
 
-CMSSW_13_0_X is an el8 release, so on lxplus (el9) start the el8 container first:
+Both releases are used in their production architecture, el8:
+`el8_amd64_gcc11` for CMSSW_13_0_X and `el8_amd64_gcc12` for CMSSW_15_0_X.
+CMSSW_15_0_X also has el9 builds, but scram flags them as non-production, and
+official 2024 NanoAOD used el8. On lxplus (el9), start the el8 container
+first, for either release:
 
 ```bash
 cmssw-el8
@@ -116,9 +120,6 @@ cmssw-el8
 ```bash
 bash nanoaod/setup.sh 2022_23 ~/work
 ```
-
-For 2024, on el9 directly:
-
 ```bash
 bash nanoaod/setup.sh 2024 ~/work
 ```
