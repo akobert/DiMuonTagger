@@ -27,6 +27,10 @@
 # by lepton flavour (DYto2Mu-2Jets_..., WtoMuNu-2Jets_...). The 2024 background
 # patterns below come from DAS listings of RunIII2024Summer24MiniAOD (2026-11-18).
 #
+# Background datasets are produced with an event filter (only events with a
+# DiMuonVtx candidate; see nanoaod/README.md). A process can set
+# `event_filter: true/false` to override the role-based default.
+#
 # Patterns name the nominal samples only. Systematic variations (top mass,
 # hdamp, tune, DGamma, ...) are left out: they would multiply the production.
 

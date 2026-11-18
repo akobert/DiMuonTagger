@@ -177,7 +177,7 @@ def all_plots(record, outdir, eras=None, formats=("png",)):
 
 # ------------------------------------------------------------------ tables --
 
-CUTFLOW_COLUMNS = ("events", "sumw", "events_with_candidate", "candidates", "candidates_bad_leg_index",
+CUTFLOW_COLUMNS = ("events_generated", "sumw", "events", "sumw_events", "events_with_candidate", "candidates", "candidates_bad_leg_index",
                    "candidates_used", "candidates_fit_valid") + tuple("cat_" + c for c in truth.CATEGORIES) \
     + ("legs_gen_matched", "legs_walk_truncated", "skim_rows")
 
@@ -189,7 +189,7 @@ def cutflow_rows(record):
         meta = record["metadata"].get(name, {})
         row = {"dataset": name, "process": meta.get("process", ""), "era": meta.get("era", "")}
         for col in CUTFLOW_COLUMNS:
-            row[col] = out["sumw"] if col == "sumw" else out["cutflow"].get(col, 0)
+            row[col] = out.get(col, 0.0) if col.startswith("sumw") else out["cutflow"].get(col, 0)
         rows.append(row)
     return rows
 
@@ -210,7 +210,9 @@ def write_cutflow(record, outdir):
         writer = csv.DictWriter(handle, fieldnames=header, lineterminator="\n")  # no \r for shell tools
         writer.writeheader()
         writer.writerows(rows)
-    text = "# Cutflow\n\nRaw counts; `sumw` is the sum of genWeight over all events.\n\n" \
+    text = "# Cutflow\n\nRaw counts. `events_generated` and `sumw` (genWeight) count every event the NANO " \
+        "job processed (Runs tree); `events` and `sumw_events` count the events in the files, which for " \
+        "backgrounds are only events with a candidate.\n\n" \
         + markdown_table(header, rows)
     with open(os.path.join(outdir, "cutflow.md"), "w") as handle:
         handle.write(text)

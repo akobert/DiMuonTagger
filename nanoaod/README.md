@@ -16,6 +16,21 @@ runs on Run 3 MiniAOD and writes standard NanoAOD plus these additions:
 file (`Events->GetListOfBranches()` titles). The full list is `EXPECTED` in
 [`check_nano.py`](DiMuonTagger/NanoProd/test/check_nano.py).
 
+**Event filter for backgrounds.** Background datasets are produced with
+`customiseDiMuonNanoFiltered`, which writes only events with at least one
+`DiMuonVtx` candidate. Events without one carry nothing for the tagger, and
+there are about 18 billion background events in Run 3; in a 2022 B⁰→J/ψK*⁰
+test only 0.12 candidates per event were found. Signal and control datasets
+keep every event, so that efficiencies can be measured. `make_cfg.py` picks
+the config from the catalog role (a process can override it with
+`event_filter: true/false`; `--event-filter on/off` overrides all).
+- The `Runs` tree still counts every processed event: `genWeightsTable` is put
+  on its own path so that it runs on every event, not only on the kept ones.
+  Normalise with `Runs` `genEventSumw`, not with the events in the file; the
+  coffea processor does this.
+- `check_nano.py` prints `events written: N of M processed` and fails if
+  `genEventCount` is smaller than the number of events written.
+
 **Duplicate muons.** Many displaced muons are a second reconstruction of a muon
 that is also in `Muon`. In a 2022 ttbar test without handling this, half of
 the Muon–Displaced pairs were a muon paired with its own copy. Those pairs, and
@@ -190,7 +205,8 @@ Still to check: how often Kalman fits fail far outside the tracker on signal
    ```
 
    Datasets that belong to the other release are skipped, so run this once in
-   CMSSW_13_0_X and once in CMSSW_15_0_X.
+   CMSSW_13_0_X and once in CMSSW_15_0_X. Background datasets get the
+   `_filtered` configs (see "Event filter for backgrounds" above).
 
 3. Submit, after `cmsenv` and `source /cvmfs/cms.cern.ch/common/crab-setup.sh`:
 

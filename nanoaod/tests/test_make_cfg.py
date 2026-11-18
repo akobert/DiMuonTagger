@@ -139,7 +139,83 @@ class TestMainDryRun(unittest.TestCase):
                     make_cfg.main(["--dataset", *DATASETS, "--out-dir", tmp, "--dry-run"])
             finally:
                 del os.environ["CMSSW_VERSION"]
-            self.assertIn("1 datasets -> 1 configs; 5 skipped", out.getvalue())
+            self.assertIn("1 datasets -> 1 configs (1 datasets with the event filter); 5 skipped", out.getvalue())
+
+
+SIGNAL_2022 = ("/HTo2ZdTo2mu2x_MZd-20_Epsilon-5e-08_TuneCP5_13p6TeV_madgraph-pythia8/"
+               "Run3Summer22MiniAODv4-130X_mcRun3_2022_realistic_v5-v2/MINIAODSIM")
+QCD_2022 = next(iter(DATASETS))
+
+
+class TestEventFilter(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.catalog = make_cfg.load_catalog(make_cfg.DEFAULT_CATALOG)
+        cls.eras = make_cfg.load_eras(make_cfg.DEFAULT_ERAS)
+
+    def test_catalog_process(self):
+        cases = {
+            "QCD_PT-15to20_MuEnrichedPt5_TuneCP5_13p6TeV_pythia8": "qcd_muenriched",
+            "QCD_Bin-PT-15to20_Fil-MuEnriched_TuneCP5_13p6TeV_pythia8": "qcd_muenriched",
+            "HTo2ZdTo2mu2x_MZd-20_Epsilon-5e-08_TuneCP5_13p6TeV_madgraph-pythia8": "hahm_zd",
+            "SMuonToMuGravitino_M-100_ctau-10mm_TuneCP5_13p6TeV_pythia8": "displaced_susy_uncorrelated",
+            "ButoJpsiK-Jpsito2Mu_Fil-Mu_TuneCP5_13p6TeV_pythia8-evtgen": "nonprompt_jpsi",
+            "SomethingElse_TuneCP5_13p6TeV_pythia8": None,
+        }
+        for primary, process in cases.items():
+            self.assertEqual(make_cfg.catalog_process(primary, self.catalog), process, primary)
+
+    def test_backgrounds_are_filtered_by_default(self):
+        f = lambda process, mode="auto": make_cfg.event_filter_for(process, self.catalog, mode)
+        self.assertTrue(f("qcd_muenriched"))
+        self.assertTrue(f("drell_yan"))
+        self.assertFalse(f("hahm_zd"))                       # signal: keep every event
+        self.assertFalse(f("displaced_susy_uncorrelated"))   # control
+        self.assertFalse(f(None))                            # unknown process: keep every event
+        self.assertTrue(f("hahm_zd", "on"))
+        self.assertFalse(f("qcd_muenriched", "off"))
+
+    def test_catalog_override(self):
+        catalog = {"processes": {"x": {"role": "background", "event_filter": False},
+                                 "y": {"role": "signal", "event_filter": True}}}
+        self.assertFalse(make_cfg.event_filter_for("x", catalog))
+        self.assertTrue(make_cfg.event_filter_for("y", catalog))
+
+    def test_filtered_config_is_separate(self):
+        info = make_cfg.describe(QCD_2022, self.catalog, self.eras)
+        plain = make_cfg.config_name(info)
+        plain_cmd = " ".join(make_cfg.cmsdriver_command(info, "/tmp/x_cfg.py", "file:input.root", -1))
+        info["event_filter"] = True
+        self.assertEqual(make_cfg.config_name(info), plain.replace("_cfg.py", "_filtered_cfg.py"))
+        cmd = " ".join(make_cfg.cmsdriver_command(info, "/tmp/x_cfg.py", "file:input.root", -1))
+        self.assertIn("--customise " + make_cfg.CUSTOMISE_FILTERED, cmd)
+        self.assertNotIn("Filtered", plain_cmd)
+        self.assertTrue(make_cfg.CUSTOMISE_FILTERED.endswith(".customiseDiMuonNanoFiltered"))
+
+    def _dry_run(self, *args):
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(out):
+            code = make_cfg.main(["--out-dir", tmp, "--dry-run", "--any-release"] + list(args))
+        self.assertEqual(code, 0)
+        return out.getvalue()
+
+    def test_dataset_mode_uses_the_catalog_role(self):
+        # test_sample.sh passes --dataset: the process comes from the catalog patterns
+        out = self._dry_run("--dataset", QCD_2022, SIGNAL_2022)
+        self.assertIn("customiseDiMuonNanoFiltered", out)
+        self.assertIn("2 datasets -> 2 configs (1 datasets with the event filter)", out)
+        out = self._dry_run("--dataset", SIGNAL_2022, "--event-filter", "on")
+        self.assertIn("(1 datasets with the event filter)", out)
+
+    def test_lists_mode_uses_the_list_process(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lists = os.path.join(tmp, "lists", "2022preEE")
+            os.makedirs(lists)
+            for process, dataset in (("qcd_muenriched", QCD_2022), ("hahm_zd", SIGNAL_2022)):
+                with open(os.path.join(lists, process + ".txt"), "w") as handle:
+                    handle.write(dataset + "\n")
+            out = self._dry_run("--lists", os.path.join(tmp, "lists"))
+        self.assertIn("2 datasets -> 2 configs (1 datasets with the event filter)", out)
 
 
 class TestSubmit(unittest.TestCase):

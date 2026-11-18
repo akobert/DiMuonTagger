@@ -5,7 +5,8 @@ Output of ``process`` (accumulated over chunks by coffea)::
     {dataset: {
         "hists":     {name: hist.Hist},   # most have a "category" axis
         "cutflow":   {step: int},
-        "sumw":      float,               # sum of genWeight over all events
+        "sumw":      float,               # sum of genWeight over all processed events
+        "sumw_events": float,             # sum of genWeight over the events in the files
         "nevents":   int,
         "skim_files": set of str,         # parquet files written
     }}
@@ -14,6 +15,13 @@ Candidate legs: ``Muon`` and ``DisplacedMuon`` are concatenated per event, so
 leg ``k`` of event ``e`` is ``Muon[k]`` for ``k < nMuon`` and
 ``DisplacedMuon[k - nMuon]`` otherwise. A DiMuonVtx leg therefore sits at
 ``muIdx + muType * nMuon`` and all legs are fetched in one indexing step.
+
+Normalisation: background NanoAOD is written with an event filter (only events
+with a DiMuonVtx candidate), so ``sumw`` comes from the Runs tree
+(genEventSumw, every event the NANO job processed), added once per file with
+its first chunk; ``events_generated`` in the cutflow is genEventCount. Files
+without a Runs genEventSumw (data, test files) fall back to the events in the
+file. With --maxchunks, files whose first chunk ran count in full.
 """
 
 import hashlib
@@ -23,6 +31,7 @@ import re
 import awkward as ak
 import hist
 import numpy as np
+import uproot
 from coffea import processor
 
 from . import truth
@@ -101,12 +110,33 @@ def make_hists():
 
 
 CUTFLOW_STEPS = (
-    "events", "events_with_candidate", "candidates", "candidates_bad_leg_index", "candidates_used",
+    "events_generated", "events", "events_with_candidate", "candidates", "candidates_bad_leg_index", "candidates_used",
     "candidates_fit_valid", "legs", "legs_gen_matched", "legs_walk_truncated",
 ) + tuple("cat_" + c for c in truth.ALL_CATEGORIES) + ("skim_rows",)
 
 
 # -------------------------------------------------------------- utilities --
+
+_RUNS_CACHE = {}  # filename -> (genEventSumw, genEventCount) or None; per worker
+
+
+def runs_counts(filename):
+    """(sum of genEventSumw, sum of genEventCount) from a file's Runs tree.
+
+    None if the file has no Runs tree with those branches (data, test files).
+    Cached per file, since every chunk of a file asks.
+    """
+    if filename not in _RUNS_CACHE:
+        counts = None
+        with uproot.open(filename) as handle:
+            if "Runs" in handle:
+                runs = handle["Runs"]
+                if {"genEventSumw", "genEventCount"} <= set(runs.keys()):
+                    counts = (float(np.sum(runs["genEventSumw"].array(library="np"))),
+                              int(np.sum(runs["genEventCount"].array(library="np"))))
+        _RUNS_CACHE[filename] = counts
+    return _RUNS_CACHE[filename]
+
 
 def _np(array, dtype=None):
     out = ak.to_numpy(array)
@@ -184,6 +214,7 @@ class DiMuonProcessor(processor.ProcessorABC):
             "hists": make_hists(),
             "cutflow": dict.fromkeys(CUTFLOW_STEPS, 0),
             "sumw": 0.0,
+            "sumw_events": 0.0,
             "nevents": 0,
             "skim_files": set(),
         }
@@ -192,8 +223,13 @@ class DiMuonProcessor(processor.ProcessorABC):
         is_mc = "GenPart" in events.fields
         w_evt = _np(events.genWeight, np.float64) if "genWeight" in events.fields else np.ones(nev)
         out["nevents"] = nev
-        out["sumw"] = float(w_evt.sum())
+        out["sumw_events"] = float(w_evt.sum())
         cut["events"] = nev
+        runs = runs_counts(md["filename"]) if md.get("filename") else None
+        if runs is None:
+            out["sumw"], cut["events_generated"] = out["sumw_events"], nev
+        elif md.get("entrystart", 0) == 0:  # the file's first chunk counts the whole file
+            out["sumw"], cut["events_generated"] = runs
 
         # ---- legs: Muon then DisplacedMuon, per event, flattened
         n_mu = _np(ak.num(events.Muon, axis=1), np.int64)

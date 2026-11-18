@@ -103,7 +103,7 @@ python3 analysis/scripts/plot.py analysis/outputs/v1/hists.coffea
 
 | Output | Contents |
 |---|---|
-| `plots/<era>/<var>.png` | Normalised shapes, one curve per truth category, per era and for all eras together (`plots/all/`). Datasets are combined with weight 1/sumw each; cross sections are not applied |
+| `plots/<era>/<var>.png` | Normalised shapes, one curve per truth category, per era and for all eras together (`plots/all/`). Datasets are combined with weight 1/sumw each (`sumw` over every processed event, see below); cross sections are not applied |
 | `plots/<era>/lxy_residual.png` | Reco − true Lxy for `signal` candidates: vertex fit vs two-track crossing point |
 | `cutflow.md`, `cutflow.csv` | Per-dataset counts |
 | `ancestors.md` | Most frequent ancestor pdgIds of gen-matched muons per dataset, with the configured LLP pdgIds marked. Warns when a signal dataset has none of them |
@@ -159,8 +159,16 @@ axis and are weighted by `genWeight`:
 - `ancestor_pdgid`, `mother_pdgid`: unweighted, one entry per gen-matched reco
   muon and per distinct ancestor; FSR copies are collapsed
 
-Also in `record["output"][dataset]`: `cutflow`, `sumw` (genWeight over all
-events), `nevents` and `skim_files`. The saved record also holds the fileset
+Also in `record["output"][dataset]`: `cutflow`, `sumw`, `sumw_events`,
+`nevents` and `skim_files`.
+- `sumw` is the sum of genWeight over every event the NANO job processed,
+  read from the `Runs` tree (`genEventSumw`) once per file. Use it for
+  normalisation: background NanoAOD keeps only events with a `DiMuonVtx`
+  candidate. The cutflow's `events_generated` is `genEventCount`.
+- `sumw_events` is the sum over the events in the files.
+- Files without a `Runs` `genEventSumw` (data, synthetic files) use the events
+  in the file for both. With `--maxchunks`, a file whose first chunk ran is
+  counted in full, so `sumw` is only approximate there. The saved record also holds the fileset
 metadata, config, metrics and versions.
 
 ## Skims
@@ -200,7 +208,8 @@ prompt J/ψ, K/π decays in flight, unmatched muons, a bad leg index, and one ge
 muon reconstructed twice. The tests check:
 
 - every candidate's truth label in the skims
-- histogram contents, the cutflow, `sumw` and the ancestor tables
+- histogram contents, the cutflow, `sumw` (from a `Runs` tree in the
+  background file, counted once over its three chunks) and the ancestor tables
 - `run.py`, `plot.py` and the notebook, end to end
 - that the futures executor and Dask (a LocalCluster whose workers cannot
   import the package from disk) give the same output, with the skims written

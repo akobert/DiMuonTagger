@@ -44,6 +44,11 @@ class vint32(_Param):
         super().__init__(list(values))
 
 
+class vstring(_Param):
+    def __init__(self, *values):
+        super().__init__(list(values))
+
+
 class InputTag(_Param):
     def __init__(self, *parts):
         super().__init__(":".join(parts))
@@ -77,6 +82,26 @@ class _Module(PSet):
 class EDProducer(_Module): pass
 class EDFilter(_Module): pass
 class ESProducer(_Module): pass
+class OutputModule(_Module): pass
+
+
+class _UntrackedPSet(PSet):
+    pass
+
+
+class untracked(object):
+    """cms.untracked.PSet(...) and friends; only PSet is needed here."""
+    PSet = _UntrackedPSet
+
+
+class Path(object):
+    def __init__(self, *items):
+        self.items = list(items)
+
+
+class Schedule(list):
+    def __init__(self, *paths):
+        super().__init__(paths)
 
 
 class Task(object):
@@ -89,8 +114,9 @@ class Task(object):
 
 def _make_config_module():
     mod = types.ModuleType("FWCore.ParameterSet.Config")
-    for name in ("string", "bool", "double", "int32", "uint32", "vint32", "InputTag",
-                 "PSet", "EDProducer", "EDFilter", "ESProducer", "Task"):
+    for name in ("string", "bool", "double", "int32", "uint32", "vint32", "vstring", "InputTag",
+                 "PSet", "EDProducer", "EDFilter", "ESProducer", "OutputModule", "Task", "Path",
+                 "Schedule", "untracked"):
         setattr(mod, name, globals()[name])
     return mod
 
@@ -151,15 +177,25 @@ def install():
 
 
 class FakeProcess(object):
-    """The parts of cms.Process that customiseDiMuonNano touches."""
+    """The parts of a cmsDriver NANO process that the customise functions touch."""
 
-    def __init__(self, cms):
+    def __init__(self, cms, mc=True):
         self.nanoTableTaskCommon = cms.Task()
         self.nanoTableTaskFS = cms.Task()
         self.genParticleTable = cms.EDProducer(
             "SimpleCandidateFlatTableProducer", src=cms.InputTag("finalGenParticles"),
             name=cms.string("GenPart"), variables=cms.PSet())
+        if mc:
+            self.genWeightsTable = cms.EDProducer("GenWeightsTableProducer")
+        self.nanoAOD_step = cms.Path()
+        self.endjob_step = cms.Path()
+        self.NANOAODSIMoutput = cms.OutputModule("NanoAODOutputModule")
+        self.NANOAODSIMoutput_step = cms.Path(self.NANOAODSIMoutput)  # an EndPath in CMSSW
+        self.schedule = cms.Schedule(self.nanoAOD_step, self.endjob_step, self.NANOAODSIMoutput_step)
         self.loaded = []
+
+    def outputModules_(self):
+        return {k: v for k, v in vars(self).items() if isinstance(v, OutputModule)}
 
     def load(self, name):
         self.loaded.append(name)

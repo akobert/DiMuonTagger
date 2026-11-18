@@ -8,7 +8,12 @@ Each MiniAOD dataset gets mapped as follows:
 - its MiniAOD format version and global tag, from the processed name;
 - a cmsDriver --era, from nanoaod/eras.yaml.
 
-One config is generated per distinct (era, MiniAOD version, global tag).
+One config is generated per distinct (era, MiniAOD version, global tag, event
+filter). Background datasets get the event filter: only events with at least
+one DiMuonVtx candidate are written (the Runs tree still counts every event).
+Signal and control datasets keep every event, for efficiencies. A catalog
+process can override this with `event_filter: true/false`; --event-filter
+on/off overrides it for every dataset.
 nanoaod/cfg/index.json maps every dataset to its config, for
 nanoaod/crab/submit.py. Datasets whose era needs the other CMSSW release are
 skipped; run this once in each release area.
@@ -22,6 +27,7 @@ skipped; run this once in each release area.
 """
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import os
@@ -41,6 +47,7 @@ DEFAULT_CATALOG = os.path.join(REPO, "samples", "catalog.yaml")
 DEFAULT_ERAS = os.path.join(HERE, "eras.yaml")
 DEFAULT_OUT = os.path.join(HERE, "cfg")
 CUSTOMISE = "DiMuonTagger/NanoProd/dimuonNano_cff.customiseDiMuonNano"
+CUSTOMISE_FILTERED = "DiMuonTagger/NanoProd/dimuonNano_cff.customiseDiMuonNanoFiltered"
 RUN = "run3"
 TIER = "MINIAODSIM"
 
@@ -95,15 +102,40 @@ def describe(dataset, catalog, eras, conditions=None):
     }
 
 
+def catalog_process(primary, catalog):
+    """Catalog process whose Run 3 patterns match a primary dataset name, or None."""
+    for name, proc in sorted(catalog["processes"].items()):
+        if any(fnmatch.fnmatchcase(primary, pattern) for pattern in proc["patterns"].get(RUN) or []):
+            return name
+    return None
+
+
+def event_filter_for(process, catalog, mode="auto"):
+    """Whether a dataset's config writes only events with a DiMuonVtx candidate.
+
+    mode "on"/"off" forces it. "auto": the catalog process's `event_filter`
+    if set, else on for backgrounds; off for signal, control and datasets of
+    no known process.
+    """
+    if mode != "auto":
+        return mode == "on"
+    proc = catalog["processes"].get(process) if process else None
+    if proc is None:
+        return False
+    return bool(proc.get("event_filter", proc["role"] == "background"))
+
+
 def config_name(info, test_inputs=None):
     """Config file name. Production configs are shared by every dataset with
-    the same era, MiniAOD version and GT (CRAB sets the input).
+    the same era, MiniAOD version, GT and event filter (CRAB sets the input).
 
     test_inputs=(filein, nevents) names a test config. The name then also
     identifies the sample and input, so tests of different samples in the
     same era never share (and silently reuse) a config.
     """
     base = "nano_%s_MiniAODv%d_%s" % (info["era"], info["miniaod_version"], info["global_tag"])
+    if info.get("event_filter"):
+        base += "_filtered"
     if test_inputs is None:
         return base + "_cfg.py"
     key = "|".join([info["dataset"], test_inputs[0], str(test_inputs[1])])
@@ -124,7 +156,7 @@ def cmsdriver_command(info, cfg_path, filein, nevents):
         "--datatier", "NANOAODSIM",
         "--era", info["cmsdriver_era"],
         "--conditions", info["global_tag"],
-        "--customise", CUSTOMISE,
+        "--customise", CUSTOMISE_FILTERED if info.get("event_filter") else CUSTOMISE,
         "-n", str(nevents),
         "--no_exec",
     ]
@@ -165,6 +197,8 @@ def main(argv=None):
     parser.add_argument("--conditions", help="override the global tag read from the dataset name")
     parser.add_argument("--filein", help="input file for a test config (default: placeholder CRAB replaces)")
     parser.add_argument("-n", "--nevents", type=int, default=-1, help="events for a test config")
+    parser.add_argument("--event-filter", choices=["auto", "on", "off"], default="auto",
+                        help="write only events with a DiMuonVtx candidate; auto: backgrounds only")
     parser.add_argument("--any-release", action="store_true",
                         help="do not skip datasets that need the other CMSSW release (with --dry-run)")
     parser.add_argument("--force", action="store_true", help="regenerate configs that already exist")
@@ -191,7 +225,8 @@ def main(argv=None):
         if not args.any_release and info["release"] != current:
             skipped += 1
             continue
-        info["process"] = process
+        info["process"] = process or catalog_process(info["primary"], catalog)
+        info["event_filter"] = event_filter_for(info["process"], catalog, args.event_filter)
         info["cfg"] = os.path.join(args.out_dir, config_name(info, (filein, args.nevents) if test else None))
         entries.append(info)
 
@@ -224,7 +259,8 @@ def main(argv=None):
             json.dump(index, handle, indent=1, sort_keys=True)
         print("index: %d datasets in %s" % (len(index), os.path.relpath(index_path)))
 
-    print("%d datasets -> %d configs; %d skipped (other release)" % (len(entries), len(commands), skipped))
+    print("%d datasets -> %d configs (%d datasets with the event filter); %d skipped (other release)"
+          % (len(entries), len(commands), sum(info["event_filter"] for info in entries), skipped))
     for message in errors:
         print("error: " + message, file=sys.stderr)
     for cfg_path in failed:

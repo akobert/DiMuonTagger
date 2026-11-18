@@ -19,6 +19,8 @@ signal (hahm_zd, 2022postEE, genWeight 2, 2, -1)
     ev 2  no muons, no candidates
 
 background (qcd_muenriched, 2023preBPix, genWeight 1)
+    Runs tree: genEventCount 10, genEventSumw 10, as if an event filter had
+    dropped 4 events without candidates.
     ev 0  b -> B0 -> mu D-, D- -> mu ; plus an unmatched muon
           cand 0 Muon0+Muon1  -> heavy_flavour
           cand 1 Muon0+Muon2  -> heavy_flavour (beats unmatched)
@@ -257,7 +259,8 @@ FILES = {
     "signal": {"events": signal_events, "process": "hahm_zd", "role": "signal", "era": "2022postEE",
                "primary": "HTo2ZdTo2mu2x_MZd-20_ctau-100mm_TuneCP5_13p6TeV_madgraph-pythia8"},
     "background": {"events": background_events, "process": "qcd_muenriched", "role": "background",
-                   "era": "2023preBPix", "primary": "QCD_PT-50to80_MuEnrichedPt5_TuneCP5_13p6TeV_pythia8"},
+                   "era": "2023preBPix", "primary": "QCD_PT-50to80_MuEnrichedPt5_TuneCP5_13p6TeV_pythia8",
+                   "runs": {"genEventCount": 10, "genEventSumw": 10.0}},
 }
 
 
@@ -272,7 +275,7 @@ def _collection(events, key, fields):
     return ak.zip(columns)
 
 
-def write_file(path, events, first_event=1):
+def write_file(path, events, first_event=1, runs=None):
     n = len(events)
     branches = {
         "run": np.ones(n, dtype=np.uint32),
@@ -288,6 +291,10 @@ def write_file(path, events, first_event=1):
     with uproot.recreate(path) as handle:
         tree = handle.mktree("Events", types)
         tree.extend(branches)
+        if runs:
+            tree = handle.mktree("Runs", {"run": np.uint32, "genEventCount": np.int64, "genEventSumw": np.float64})
+            tree.extend({"run": np.ones(1, np.uint32), "genEventCount": np.array([runs["genEventCount"]], np.int64),
+                         "genEventSumw": np.array([runs["genEventSumw"]], np.float64)})
     return path
 
 
@@ -296,7 +303,8 @@ def write_all(directory, tag="synthetic"):
     os.makedirs(directory, exist_ok=True)
     fileset = {}
     for i, (key, spec) in enumerate(FILES.items()):
-        path = write_file(os.path.join(directory, "%s.root" % key), spec["events"](), first_event=1000 * (i + 1))
+        path = write_file(os.path.join(directory, "%s.root" % key), spec["events"](), first_event=1000 * (i + 1),
+                          runs=spec.get("runs"))
         name = "%s/%s/%s" % (spec["process"], spec["era"], spec["primary"])
         fileset[name] = {
             "files": {os.path.abspath(path): "Events"},

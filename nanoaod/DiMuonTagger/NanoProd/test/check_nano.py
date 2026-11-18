@@ -13,6 +13,9 @@ charges), and the opposite-sign part of those ("same-gen OS", e.g. a copy
 with a wrongly measured charge). Only for Muon-Displaced pairs: NanoAOD gen
 matching is one-to-one within a collection, so two copies in the same
 collection never share a gen muon (the second is left unmatched).
+In simulation it also compares the events written with the events processed
+(Runs-tree genEventCount): with the background event filter, only events with
+a DiMuonVtx candidate are written, but every processed event must be counted.
 Exits non-zero if a branch is missing or a check fails. Needs uproot and
 awkward (both in CMSSW's Python 3).
 """
@@ -129,6 +132,27 @@ def same_gen_muon(ev):
     return (legs[0] >= 0) & (legs[0] == legs[1])
 
 
+def processed_events(path):
+    """Sum of Runs-tree genEventCount: events the NANO job processed (None for data)."""
+    with uproot.open(path) as handle:
+        if "Runs" not in handle or "genEventCount" not in handle["Runs"].keys():
+            return None
+        return int(np.sum(handle["Runs"]["genEventCount"].array(library="np")))
+
+
+def check_event_counts(written, processed):
+    """Line describing written vs processed events, and whether that is consistent."""
+    if processed is None:
+        return "events written: %d (no Runs genEventCount)" % written, True
+    if processed < written:
+        return ("ERROR: Runs genEventCount %d < %d events written: the gen-weight counters missed events"
+                % (processed, written)), False
+    if processed == written:
+        return "events written: %d of %d processed (no event filter)" % (written, processed), True
+    return ("events written: %d of %d processed (%.1f%% kept by the event filter)"
+            % (written, processed, 100.0 * written / processed)), True
+
+
 def summarize(ev, indices_ok=True):
     vtx_valid = ak.flatten(ev["DiMuonVtx_valid"])
     t1 = ak.to_numpy(ak.flatten(ev["DiMuonVtx_mu1Type"])).astype(int)
@@ -208,6 +232,10 @@ def main(argv=None):
         if "Muon_genPartIdx" in keys:
             names += ["Muon_genPartIdx", "DisplacedMuon_genPartIdx"]
         ev = tree.arrays(names)
+        line, counts_ok = check_event_counts(len(ev), processed_events(path))
+        print(line)
+        if not counts_ok:
+            status = 1
         bad = index_errors(ev)
         if bad:
             print("ERROR: %d indices point outside Muon/DisplacedMuon" % bad)

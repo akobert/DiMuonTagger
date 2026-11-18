@@ -138,6 +138,49 @@ class TestCustomise(unittest.TestCase):
             self.assertEqual(gen_vars[coord].expr.value, coord)
             self.assertEqual(gen_vars[coord].precision.value, -1)
 
+    def test_unfiltered_keeps_every_event(self):
+        process = cmssw_stub.FakeProcess(self.cms)
+        self.customise(process)
+        self.assertFalse(hasattr(process.NANOAODSIMoutput, "SelectEvents"))
+        self.assertEqual(len(process.schedule), 3)
+
+
+class TestCustomiseFiltered(unittest.TestCase):
+    def setUp(self):
+        self.cms = cmssw_stub.install()
+        self.nano = sys.modules["DiMuonTagger.NanoProd.dimuonNano_cff"]
+
+    def test_filter_selects_output_events(self):
+        process = cmssw_stub.FakeProcess(self.cms)
+        self.assertIs(self.nano.customiseDiMuonNanoFiltered(process), process)
+        self.assertIn(process.dimuonTask, process.nanoTableTaskCommon.items)  # everything unfiltered does
+        filt = process.diMuonVertexFilter
+        self.assertEqual(filt.type_(), "CandViewCountFilter")
+        self.assertEqual(filt.src.value, "diMuonVertices")  # the producer's label in dimuonVertex_cff
+        self.assertIn("diMuonVertices", vars(sys.modules["DiMuonTagger.NanoProd.dimuonVertex_cff"]))
+        self.assertEqual(filt.minNumber.value, 1)
+        path = getattr(process, self.nano.FILTER_PATH)
+        self.assertEqual(path.items, [filt])
+        select = process.NANOAODSIMoutput.SelectEvents
+        self.assertIsInstance(select, cmssw_stub.untracked.PSet)
+        self.assertEqual(select.SelectEvents.value, [self.nano.FILTER_PATH])
+
+    def test_gen_weights_run_on_every_event(self):
+        process = cmssw_stub.FakeProcess(self.cms)
+        self.nano.customiseDiMuonNanoFiltered(process)
+        gen_path = getattr(process, self.nano.GEN_WEIGHTS_PATH)
+        self.assertEqual(gen_path.items, [process.genWeightsTable])
+        # both paths scheduled, ahead of the output step
+        self.assertEqual(process.schedule[:2], [getattr(process, self.nano.FILTER_PATH), gen_path])
+        self.assertIs(process.schedule[-1], process.NANOAODSIMoutput_step)
+
+    def test_data_has_no_gen_weights_path(self):
+        process = cmssw_stub.FakeProcess(self.cms, mc=False)
+        self.nano.customiseDiMuonNanoFiltered(process)
+        self.assertFalse(hasattr(process, self.nano.GEN_WEIGHTS_PATH))
+        self.assertEqual(process.schedule[0], getattr(process, self.nano.FILTER_PATH))
+        self.assertEqual(len(process.schedule), 4)
+
 
 if __name__ == "__main__":
     unittest.main()

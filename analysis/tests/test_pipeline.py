@@ -32,9 +32,12 @@ def test_output_layout(iterative_run):
 
 def test_sumw_and_cutflow(iterative_run):
     out = iterative_run["record"]["output"]
-    assert out[SIG]["sumw"] == pytest.approx(3.0)       # 2 + 2 - 1
-    assert out[BKG]["sumw"] == pytest.approx(6.0)
+    assert out[SIG]["sumw"] == pytest.approx(3.0)       # 2 + 2 - 1; no Runs tree: from the events
+    assert out[SIG]["sumw_events"] == pytest.approx(3.0)
+    assert out[BKG]["sumw"] == pytest.approx(10.0)      # Runs genEventSumw, once for the file's 3 chunks
+    assert out[BKG]["sumw_events"] == pytest.approx(6.0)
     sig, bkg = out[SIG]["cutflow"], out[BKG]["cutflow"]
+    assert (sig["events_generated"], bkg["events_generated"]) == (3, 10)
     assert (sig["events"], sig["events_with_candidate"], sig["candidates"], sig["candidates_used"]) == (3, 2, 5, 5)
     assert sig["candidates_fit_valid"] == 4
     assert (bkg["events"], bkg["candidates"], bkg["candidates_bad_leg_index"], bkg["candidates_used"]) == (6, 8, 1, 7)

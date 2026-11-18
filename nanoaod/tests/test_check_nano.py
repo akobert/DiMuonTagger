@@ -23,7 +23,7 @@ def _jagged(counts, value, dtype):
 
 
 def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, dsa_replaced=0, drop=None,
-               muon_gen=(0, 1, 0), dsa_gen=0, charges=(0, 0), muon_dup=(-1, -1, -1)):
+               muon_gen=(0, 1, 0), dsa_gen=0, charges=(0, 0), muon_dup=(-1, -1, -1), processed=None):
     """Two events: 2 muons + 1 displaced muon, then 1 muon + 0 displaced; one pair each.
 
     The event-0 pair is Muon[leg_idx[0]] + DisplacedMuon[0]; the event-1 pair
@@ -32,7 +32,8 @@ def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, dsa_replaced=0, drop=None,
     muon_gen: Muon_genPartIdx of the three muons (event 0: two, event 1: one);
     dsa_gen: DisplacedMuon_genPartIdx of the displaced muon; charges:
     DiMuonVtx_charge of the two pairs (0 = opposite sign, +-2 = same sign);
-    muon_dup: Muon_dupIdx of the three muons.
+    muon_dup: Muon_dupIdx of the three muons. processed: genEventCount
+    entries of a Runs tree (one per run), or None for no Runs tree.
     """
     n_mu, n_dsa, n_vtx, n_gen = [2, 1], [1, 0], [1, 1], [3, 2]
     from check_nano import EXPECTED
@@ -75,6 +76,11 @@ def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, dsa_replaced=0, drop=None,
         # `handle[name] = ...` writes in recent uproot.
         tree = handle.mktree("Events", {name: array.type for name, array in branches.items()})
         tree.extend(branches)
+        if processed is not None:
+            runs = handle.mktree("Runs", {"run": np.uint32, "genEventCount": np.int64, "genEventSumw": np.float64})
+            runs.extend({"run": np.arange(1, len(processed) + 1, dtype=np.uint32),
+                         "genEventCount": np.array(processed, np.int64),
+                         "genEventSumw": np.array(processed, np.float64)})
 
 
 @unittest.skipIf(uproot is None, "needs uproot and awkward")
@@ -95,6 +101,19 @@ class TestCheckNano(unittest.TestCase):
         self.assertIn("candidates: 2", out)
         self.assertIn("Muon-Displaced", out)
         self.assertIn("Muon-Muon", out)
+
+    def test_event_counts(self):
+        code, out = self.run_check()
+        self.assertIn("events written: 2 (no Runs genEventCount)", out)
+        code, out = self.run_check(processed=[2])
+        self.assertEqual(code, 0, out)
+        self.assertIn("events written: 2 of 2 processed (no event filter)", out)
+        code, out = self.run_check(processed=[5, 3])  # two runs, filtered
+        self.assertEqual(code, 0, out)
+        self.assertIn("events written: 2 of 8 processed (25.0% kept by the event filter)", out)
+        code, out = self.run_check(processed=[1])  # counters ran only on some written events
+        self.assertEqual(code, 1, out)
+        self.assertIn("ERROR: Runs genEventCount 1 < 2 events written", out)
 
     def test_index_out_of_range(self):
         code, out = self.run_check(leg_idx=(0, 1))  # event 1 has a single muon: index 1 is bad
