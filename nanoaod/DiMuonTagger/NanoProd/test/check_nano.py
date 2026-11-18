@@ -10,7 +10,9 @@ duplicates resolved, pair types, fit success, Lxy quantiles, gen-match rate).
 In simulation the pair table also counts pairs whose two legs match the same
 generated muon ("same-gen": one muon reconstructed twice, whatever the
 charges), and the opposite-sign part of those ("same-gen OS", e.g. a copy
-with a wrongly measured charge).
+with a wrongly measured charge). Only for Muon-Displaced pairs: NanoAOD gen
+matching is one-to-one within a collection, so two copies in the same
+collection never share a gen muon (the second is left unmatched).
 Exits non-zero if a branch is missing or a check fails. Needs uproot and
 awkward (both in CMSSW's Python 3).
 """
@@ -25,6 +27,7 @@ import uproot
 # The custom branch spec shared with the coffea framework in analysis/.
 EXPECTED = {
     "GenPart": ["vx", "vy", "vz"],
+    "Muon": ["dupIdx"],
     "DisplacedMuon": ["pt", "eta", "phi", "mass", "charge", "isGlobal", "isStandalone", "isTracker",
                       "nValidMuonHits", "nMuonStations", "normChi2", "ptErr", "genPartIdx", "genPartFlav",
                       "muonIdx", "replaced", "muonDR"],
@@ -53,8 +56,8 @@ def missing_branches(keys):
 def index_errors(ev):
     """Number of indices pointing outside their target collection.
 
-    DiMuonVtx legs must point at an existing Muon/DisplacedMuon row, and
-    DisplacedMuon_muonIdx must be -1 or an existing Muon row.
+    DiMuonVtx legs must point at an existing Muon/DisplacedMuon row;
+    DisplacedMuon_muonIdx and Muon_dupIdx must be -1 or an existing Muon row.
     """
     bad = 0
     for leg in ("mu1", "mu2"):
@@ -62,8 +65,9 @@ def index_errors(ev):
         typ = ev["DiMuonVtx_%sType" % leg]
         size = ak.where(typ == 0, ev["nMuon"], ev["nDisplacedMuon"])
         bad += int(ak.sum((idx < 0) | (idx >= size) | ((typ != 0) & (typ != 1))))
-    idx = ev["DisplacedMuon_muonIdx"]
-    bad += int(ak.sum((idx < -1) | (idx >= ev["nMuon"])))
+    for name in ("DisplacedMuon_muonIdx", "Muon_dupIdx"):
+        idx = ev[name]
+        bad += int(ak.sum((idx < -1) | (idx >= ev["nMuon"])))
     return bad
 
 
@@ -75,8 +79,9 @@ def _offsets(counts):
 def dropped_copy_legs(ev):
     """Number of DiMuonVtx legs that are the dropped copy of a duplicate.
 
-    A displaced muon with replaced == 1 must not be a leg; neither may the Muon
-    it duplicates (muonIdx) when it was kept (replaced == 0).
+    A Muon with dupIdx >= 0 (copy of a global Muon) must not be a leg; nor a
+    displaced muon with replaced == 1; nor the Muon a displaced muon duplicates
+    (muonIdx) when the displaced muon was kept (replaced == 0).
     Assumes index_errors(ev) == 0.
     """
     off_mu, n_mu = _offsets(ev["nMuon"])
@@ -86,6 +91,8 @@ def dropped_copy_legs(ev):
     dsa_event = np.repeat(np.arange(len(n_dsa)), n_dsa)
     keep_dsa = (match >= 0) & ~replaced
     dropped_mu = set((off_mu[dsa_event[keep_dsa]] + match[keep_dsa]).tolist())
+    dup = ak.to_numpy(ak.flatten(ev["Muon_dupIdx"])).astype(np.int64)
+    dropped_mu |= set(np.nonzero(dup >= 0)[0].tolist())  # flat Muon positions
     _, n_vtx = _offsets(ev["nDiMuonVtx"])
     vtx_event = np.repeat(np.arange(len(n_vtx)), n_vtx)
     bad = 0
@@ -138,6 +145,9 @@ def summarize(ev, indices_ok=True):
     print("events: %d   candidates: %d (%.2f / event)" % (n_events, n_cand, n_cand / max(n_events, 1)))
     print("muons / event: %.2f   displaced muons / event: %.2f"
           % (ak.mean(ev["nMuon"]), ak.mean(ev["nDisplacedMuon"])))
+    dup = ak.to_numpy(ak.flatten(ev["Muon_dupIdx"]))
+    if len(dup):
+        print("Muons that are copies of a global Muon (not used as legs): %.1f%%" % (100.0 * (dup >= 0).mean()))
     if len(matched):
         pct = lambda sel: 100.0 * sel.sum() / len(matched)
         print("displaced muons duplicating a Muon: %.1f%% (replaced by the Muon: %.1f%%, "
@@ -160,7 +170,10 @@ def summarize(ev, indices_ok=True):
             line = "%-22s %8d %9.1f%% %7.1f%% %9.1f%% %14s" % (
                 name, sel.sum(), 100 * valid[sel].mean(), 100 * (lxy_cp[sel] >= 0).mean(),
                 100 * (same_sign[sel] & (dr[sel] < 0.2)).mean(), median)
-            if same_gen is not None:
+            if same_gen is not None and name != "Muon-Displaced":
+                # one-to-one gen matching within a collection: always 0, not informative
+                line += " %10s %12s" % ("n/a", "n/a")
+            elif same_gen is not None:
                 line += " %9.1f%% %11.1f%%" % (100 * same_gen[sel].mean(),
                                                100 * (same_gen[sel] & ~same_sign[sel]).mean())
             print(line)
@@ -190,7 +203,7 @@ def main(argv=None):
             print("MISSING branches: %s" % ", ".join(missing))
             status = 1
             continue
-        names = ["nMuon", "nDisplacedMuon", "DisplacedMuon_muonIdx", "DisplacedMuon_replaced"] + \
+        names = ["nMuon", "nDisplacedMuon", "DisplacedMuon_muonIdx", "DisplacedMuon_replaced", "Muon_dupIdx"] + \
             [k for k in keys if k.startswith(("DiMuonVtx_", "nDiMuonVtx"))]
         if "Muon_genPartIdx" in keys:
             names += ["Muon_genPartIdx", "DisplacedMuon_genPartIdx"]

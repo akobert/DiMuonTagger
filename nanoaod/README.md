@@ -2,11 +2,12 @@
 
 Standard NanoAOD has no dimuon vertex fit and no displaced standalone (DSA)
 muons, and coffea cannot read MiniAOD. This directory adds a CMSSW package that
-runs on Run 3 MiniAOD and writes standard NanoAOD plus three additions:
+runs on Run 3 MiniAOD and writes standard NanoAOD plus these additions:
 
 | Collection | What it adds |
 |---|---|
 | `GenPart` | `vx, vy, vz`: production vertex at full precision. An LLP's decay position is its daughter muons' production vertex. |
+| `Muon` | `dupIdx`: the global `Muon` this muon is a copy of (−1 if none). Copies are not used in `DiMuonVtx`. |
 | `DisplacedMuon` | Muons from `slimmedDisplacedMuons` with pt > 3 GeV: kinematics, muon type flags, outer-track hits, stations, χ²/ndof, pT error, gen match (`genPartIdx`, `genPartFlav`), and the match to the standard muons (`muonIdx`, `replaced`, `muonDR`). |
 | `DiMuonVtx` | One row per muon pair: Muon–Muon, Muon–Displaced and Displaced–Displaced. Each row has leg indices and types, a Kalman vertex fit (position and errors, χ², probability), Lxy and its error w.r.t. beam spot and PV, 3D distance to the PV, pointing angles, the two-track DCA and crossing point (`lxyCP`, filled even when the fit fails), leg momenta at the vertex, and per-leg dxy w.r.t. the beam spot. |
 
@@ -45,6 +46,21 @@ Branches:
 - `DisplacedMuon_replaced`: 1 if the `Muon` was kept, 0 if the displaced muon was.
 - `DisplacedMuon_muonDR`: ΔR to the nearest `Muon` of any charge, for retuning.
 
+**Copies within the standard collection.** This step runs before the
+displaced-muon step.
+- **The finding:** the standard `Muon` collection itself can hold two copies of
+  one muon. In the 2022 ttbar test, 13 of 18 same-sign Muon–Muon pairs with
+  ΔR < 0.2 were a global muon plus a muon that is neither global, tracker nor
+  muon-system-only, most likely tagged only by the RPC or GEM detectors on the
+  same tracker track. The pairs had a median ΔR of 0.04 and a median pT ratio of
+  0.82, and only one muon of each pair was gen-matched.
+- **The rule:** a standard muon failing `preferredMuonCut` with the same charge
+  within `standardMatchDeltaR` (default 0.2; `standardMatchSameCharge`) of one
+  passing it is a copy. It's dropped as a leg, and `Muon_dupIdx` points to the
+  kept muon. One global muon can absorb several copies. Two global or two
+  non-global muons are both kept. Muons dropped here are also skipped in the
+  displaced-muon step.
+
 `check_nano.py` reports how many displaced muons had a copy and which copy was
 kept. It fails if a dropped copy appears in any pair. Its "dup-like" column
 (same-sign, ΔR < 0.2) should be near zero for Muon–Displaced pairs.
@@ -53,7 +69,12 @@ In simulation the definitive check is the "same-gen" column: the fraction of
 pairs whose two muons match the same generated muon, i.e. one muon
 reconstructed twice, whatever the charges. "same-gen OS" is the opposite-sign
 part of those, for example a copy whose charge was measured wrongly, which the
-same-charge rule doesn't catch.
+same-charge rule doesn't catch. It applies only to Muon–Displaced pairs and
+shows "n/a" for the others. NanoAOD's gen matching is one-to-one within a
+collection, so the second copy of a muon in the same collection is always left
+unmatched, and two copies there never share a generated muon.
+`check_nano.py` also reports the fraction of `Muon`s that are copies, and fails
+if a dropped copy appears in any pair.
 
 Run 3 only: Run 2 UL MiniAOD has no displaced-muon collection.
 

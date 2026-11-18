@@ -23,7 +23,7 @@ def _jagged(counts, value, dtype):
 
 
 def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, dsa_replaced=0, drop=None,
-               muon_gen=(0, 1, 0), dsa_gen=0, charges=(0, 0)):
+               muon_gen=(0, 1, 0), dsa_gen=0, charges=(0, 0), muon_dup=(-1, -1, -1)):
     """Two events: 2 muons + 1 displaced muon, then 1 muon + 0 displaced; one pair each.
 
     The event-0 pair is Muon[leg_idx[0]] + DisplacedMuon[0]; the event-1 pair
@@ -31,7 +31,8 @@ def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, dsa_replaced=0, drop=None,
     DisplacedMuon_muonIdx / _replaced of the event-0 displaced muon.
     muon_gen: Muon_genPartIdx of the three muons (event 0: two, event 1: one);
     dsa_gen: DisplacedMuon_genPartIdx of the displaced muon; charges:
-    DiMuonVtx_charge of the two pairs (0 = opposite sign, +-2 = same sign).
+    DiMuonVtx_charge of the two pairs (0 = opposite sign, +-2 = same sign);
+    muon_dup: Muon_dupIdx of the three muons.
     """
     n_mu, n_dsa, n_vtx, n_gen = [2, 1], [1, 0], [1, 1], [3, 2]
     from check_nano import EXPECTED
@@ -59,7 +60,8 @@ def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, dsa_replaced=0, drop=None,
     vtx["lxyCP"] = ak.unflatten(np.array([2.4, 0.01], np.float32), n_vtx)
     branches = {
         "Muon": ak.zip({"pt": _jagged(n_mu, 10.0, np.float32),
-                        "genPartIdx": ak.unflatten(np.array(muon_gen, np.int16), n_mu)}),
+                        "genPartIdx": ak.unflatten(np.array(muon_gen, np.int16), n_mu),
+                        "dupIdx": ak.unflatten(np.array(muon_dup, np.int32), n_mu)}),
         "DisplacedMuon": ak.zip(dsa),
         "DiMuonVtx": ak.zip(vtx),
         "GenPart": ak.zip(fields("GenPart", n_gen)),
@@ -100,6 +102,20 @@ class TestCheckNano(unittest.TestCase):
         self.assertIn("1 indices point outside", out)
         self.assertNotIn("same-gen", out)  # gen lookup skipped when indices are bad
 
+    def test_standard_muon_copies(self):
+        # Muon[1] (event 0) is a copy of Muon[0] and is not a leg: fine
+        code, out = self.run_check(muon_dup=(-1, 0, -1))
+        self.assertEqual(code, 0, out)
+        self.assertIn("copies of a global Muon (not used as legs): 33.3%", out)
+        # Muon[0] (event 0) is marked as a copy but is a leg of the event-0 pair
+        code, out = self.run_check(muon_dup=(1, -1, -1))
+        self.assertEqual(code, 1, out)
+        self.assertIn("1 DiMuonVtx legs are the dropped copy", out)
+        # dupIdx beyond the event's muons
+        code, out = self.run_check(muon_dup=(-1, 5, -1))
+        self.assertEqual(code, 1, out)
+        self.assertIn("1 indices point outside", out)
+
     @staticmethod
     def same_gen(out, pair_type):
         """(same-gen %, same-gen OS %) of a pair-type row."""
@@ -113,7 +129,9 @@ class TestCheckNano(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("same-gen OS", out)
         self.assertEqual(self.same_gen(out, "Muon-Displaced"), (100.0, 100.0))
-        self.assertEqual(self.same_gen(out, "Muon-Muon"), (100.0, 100.0))
+        # same-collection rows show n/a: gen matching is one-to-one within a collection
+        muon_muon = next(l for l in out.splitlines() if l.startswith("Muon-Muon "))
+        self.assertEqual(muon_muon.split()[-2:], ["n/a", "n/a"])
         # same-sign copy: counted as same-gen, not as same-gen OS
         _, out = self.run_check(charges=(2, 0))
         self.assertEqual(self.same_gen(out, "Muon-Displaced"), (100.0, 0.0))

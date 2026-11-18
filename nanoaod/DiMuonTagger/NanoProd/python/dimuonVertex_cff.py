@@ -102,6 +102,11 @@ diMuonVertices = cms.EDProducer(
     # Same charge keeps the opposite-sign partner from one LLP decay apart.
     displacedMatchDeltaR=cms.double(0.2),
     displacedMatchSameCharge=cms.bool(True),
+    # Within the standard collection: a non-global muon (e.g. RPC/GEM-tagged or
+    # muon-system-only) with the same charge within this deltaR of a global one
+    # is a copy of it and is not used as a leg (0 disables).
+    standardMatchDeltaR=cms.double(0.2),
+    standardMatchSameCharge=cms.bool(True),
     preferredMuonCut=cms.string("isGlobalMuon"),
     maxCandidates=cms.uint32(50),
 )
@@ -162,6 +167,24 @@ diMuonVertexTable = cms.EDProducer(
     ),
 )
 
+# Extension of the standard Muon table (same source, no cut, so rows line up):
+# Muon_dupIdx from the within-collection duplicate step of diMuonVertices.
+muonDupTable = cms.EDProducer(
+    "DisplacedMuonFlatTableProducer",  # SimpleFlatTableProducer<pat::Muon>
+    src=diMuonVertices.muons,
+    cut=cms.string(""),
+    name=cms.string("Muon"),
+    doc=cms.string("DiMuonTagger additions to the Muon table"),
+    singleton=cms.bool(False),
+    extension=cms.bool(True),
+    variables=cms.PSet(),
+    externalVariables=cms.PSet(
+        dupIdx=ExtVar(cms.InputTag("diMuonVertices", "muonDupIdx"), int,
+                      doc="index of the global Muon this muon is a copy of (same charge, close in deltaR); "
+                          "such muons are not used in DiMuonVtx; -1 if none"),
+    ),
+)
+
 dimuonTask = cms.Task(selectedDisplacedMuonsForNano, diMuonVertices)
-dimuonTablesTask = cms.Task(displacedMuonTable, diMuonVertexTable)
+dimuonTablesTask = cms.Task(displacedMuonTable, diMuonVertexTable, muonDupTable)
 dimuonMCTask = cms.Task(displacedMuonsMCMatchForTable, displacedMuonMCTable)

@@ -13,7 +13,17 @@
 // Displaced muons are often a second reconstruction of a muon that is also in
 // the standard collection. Pairing such a copy with its original, or with
 // another prompt muon, gives spurious far-displaced vertices. So duplicates are
-// resolved before pairing:
+// resolved before pairing, in two steps.
+//
+// 1. Within the standard collection: a standard muon failing preferredMuonCut
+//    (e.g. an RPC/GEM-tagged or muon-system-only muon) within
+//    standardMatchDeltaR of a standard muon passing it, with the same charge
+//    (standardMatchSameCharge), is a copy of that muon and is dropped; the
+//    preferred muon may absorb several copies. Written as ValueMap muonDupIdx
+//    (index of the preferred muon, or -1) for the Muon table. Two preferred or
+//    two non-preferred muons are both kept.
+//
+// 2. Displaced vs standard (standard muons dropped in step 1 are skipped):
 //  - a displaced and a standard muon are copies of one muon if they are within
 //    displacedMatchDeltaR and (with displacedMatchSameCharge) have the same
 //    charge; the charge requirement keeps the opposite-sign partner from the
@@ -199,6 +209,8 @@ private:
   const std::string displacedTrack_;
   const double displacedMatchDeltaR_;
   const bool displacedMatchSameCharge_;
+  const double standardMatchDeltaR_;
+  const bool standardMatchSameCharge_;
   const StringCutObjectSelector<pat::Muon> preferredMuon_;
   const unsigned int maxCandidates_;
 };
@@ -214,12 +226,15 @@ DiMuonVertexProducer::DiMuonVertexProducer(const edm::ParameterSet& cfg)
       displacedTrack_(cfg.getParameter<std::string>("displacedTrack")),
       displacedMatchDeltaR_(cfg.getParameter<double>("displacedMatchDeltaR")),
       displacedMatchSameCharge_(cfg.getParameter<bool>("displacedMatchSameCharge")),
+      standardMatchDeltaR_(cfg.getParameter<double>("standardMatchDeltaR")),
+      standardMatchSameCharge_(cfg.getParameter<bool>("standardMatchSameCharge")),
       preferredMuon_(cfg.getParameter<std::string>("preferredMuonCut")),
       maxCandidates_(cfg.getParameter<unsigned int>("maxCandidates")) {
   if (displacedTrack_ != "outer" && displacedTrack_ != "best")
     throw cms::Exception("Configuration") << "displacedTrack must be 'outer' or 'best', got '" << displacedTrack_
                                           << "'";
   produces<pat::CompositeCandidateCollection>();
+  produces<edm::ValueMap<int>>("muonDupIdx");
   if (!displacedTag_.label().empty()) {
     displacedToken_ = consumes<edm::View<pat::Muon>>(displacedTag_);
     produces<edm::ValueMap<int>>("dsaMuonIdx");
@@ -403,11 +418,42 @@ void DiMuonVertexProducer::produce(edm::StreamID, edm::Event& iEvent, const edm:
   const reco::VertexCollection& pvs = iEvent.get(pvToken_);
   const reco::Vertex* pv = pvs.empty() ? nullptr : &pvs.front();
 
-  const edm::View<pat::Muon>& muons = iEvent.get(muonToken_);
+  const edm::Handle<edm::View<pat::Muon>> muonHandle = iEvent.getHandle(muonToken_);
+  const edm::View<pat::Muon>& muons = *muonHandle;
   std::vector<Leg> legs;
 
+  // Step 1: copies within the standard collection. A non-preferred muon close
+  // to a preferred one (same charge) is dropped; it is matched to the nearest.
+  std::vector<char> preferred(muons.size(), 0);
+  for (size_t i = 0; i < muons.size(); ++i)
+    preferred[i] = preferredMuon_(muons[i]) ? 1 : 0;
+  std::vector<int> dupIdx(muons.size(), -1);
+  std::vector<char> dropMuon(muons.size(), 0);
+  for (size_t k = 0; k < muons.size(); ++k) {
+    if (preferred[k])
+      continue;
+    double best = standardMatchDeltaR_;  // <= 0 disables
+    for (size_t g = 0; g < muons.size(); ++g) {
+      if (!preferred[g] || (standardMatchSameCharge_ && muons[g].charge() != muons[k].charge()))
+        continue;
+      const double dr = reco::deltaR(muons[k], muons[g]);
+      if (dr < best) {
+        best = dr;
+        dupIdx[k] = static_cast<int>(g);
+      }
+    }
+    if (dupIdx[k] >= 0)
+      dropMuon[k] = 1;
+  }
+  auto dupMap = std::make_unique<edm::ValueMap<int>>();
+  edm::ValueMap<int>::Filler dupFiller(*dupMap);
+  dupFiller.insert(muonHandle, dupIdx.begin(), dupIdx.end());
+  dupFiller.fill();
+  iEvent.put(std::move(dupMap), "muonDupIdx");
+
+  // Step 2: displaced vs standard copies.
   if (displacedTag_.label().empty()) {
-    collectLegs(muons, kDmPatMuon, builder, legs);
+    collectLegs(muons, kDmPatMuon, builder, legs, &dropMuon);
   } else {
     const edm::Handle<edm::View<pat::Muon>> displaced = iEvent.getHandle(displacedToken_);
     const size_t nDsa = displaced->size();
@@ -422,6 +468,8 @@ void DiMuonVertexProducer::produce(edm::StreamID, edm::Event& iEvent, const edm:
         const double dr = reco::deltaR(dsa, muons[i]);
         if (nearestDR[j] < 0.f || dr < nearestDR[j])
           nearestDR[j] = dr;
+        if (dupIdx[i] >= 0)
+          continue;  // already dropped as a copy of another standard muon
         if (dr < displacedMatchDeltaR_ && (!displacedMatchSameCharge_ || dsa.charge() == muons[i].charge()))
           pairs.emplace_back(dr, j, i);
       }
@@ -431,7 +479,7 @@ void DiMuonVertexProducer::produce(edm::StreamID, edm::Event& iEvent, const edm:
     std::sort(pairs.begin(), pairs.end());
     std::vector<int> matchedMuon(nDsa, -1);
     std::vector<int> replaced(nDsa, 0);
-    std::vector<char> dropDsa(nDsa, 0), dropMuon(muons.size(), 0), muonUsed(muons.size(), 0);
+    std::vector<char> dropDsa(nDsa, 0), muonUsed(muons.size(), 0);
     for (const auto& pair : pairs) {
       const size_t j = std::get<1>(pair);
       const size_t i = std::get<2>(pair);
@@ -439,7 +487,7 @@ void DiMuonVertexProducer::produce(edm::StreamID, edm::Event& iEvent, const edm:
         continue;
       matchedMuon[j] = static_cast<int>(i);
       muonUsed[i] = 1;
-      if (preferredMuon_(muons[i])) {
+      if (preferred[i]) {
         replaced[j] = 1;
         dropDsa[j] = 1;
       } else {
@@ -493,9 +541,12 @@ void DiMuonVertexProducer::fillDescriptions(edm::ConfigurationDescriptions& desc
       ->setComment("displaced and standard muon within this deltaR are copies of one muon (0 disables)");
   desc.add<bool>("displacedMatchSameCharge", true)
       ->setComment("copies must have the same charge (keeps the opposite-sign partner muon apart)");
+  desc.add<double>("standardMatchDeltaR", 0.2)
+      ->setComment("a standard muon failing preferredMuonCut this close to one passing it is its copy (0 disables)");
+  desc.add<bool>("standardMatchSameCharge", true)->setComment("standard-standard copies must have the same charge");
   desc.add<std::string>("preferredMuonCut", "isGlobalMuon")
-      ->setComment("standard muons passing this cut are kept over their displaced copy; otherwise the "
-                   "displaced copy is kept and the standard muon dropped");
+      ->setComment("standard muons passing this cut are kept over their copies: non-preferred standard muons, "
+                   "and displaced muons; a displaced copy of a non-preferred standard muon is kept instead");
   desc.add<unsigned int>("maxCandidates", 50)->setComment("maximum pairs stored per event");
   descriptions.add("diMuonVertexProducer", desc);
 }

@@ -91,13 +91,24 @@ class TestDimuonVertexCff(unittest.TestCase):
         products = dict((label, ctype) for ctype, label in
                         re.findall(r'produces<edm::ValueMap<(\w+)>>\("(\w+)"\)', source))
         self.assertTrue(products)
-        ext = self.cff.displacedMuonTable.externalVariables.parameters_()
-        self.assertEqual(len(ext), len(products))
+        ext = dict(self.cff.displacedMuonTable.externalVariables.parameters_())
+        ext.update(self.cff.muonDupTable.externalVariables.parameters_())
+        self.assertEqual(len(ext), len(products))  # every ValueMap is stored, none is missing
         for name, var in ext.items():
             module, label = var.src.value.split(":")
             self.assertEqual(module, "diMuonVertices", name)
             self.assertIn(label, products, name)
             self.assertEqual(var.type.value, products[label], name)  # "int"/"float" read ValueMap<int/float>
+
+    def test_muon_extension_table(self):
+        table = self.cff.muonDupTable
+        self.assertEqual(table.name.value, "Muon")
+        self.assertTrue(table.extension.value)
+        self.assertEqual(table.cut.value, "")  # rows must line up with the Muon table
+        self.assertEqual(table.src, self.cff.diMuonVertices.muons)
+        self.assertEqual(set(table.externalVariables.parameters_()), set(self.expected["Muon"]))
+        self.assertEqual(table.variables.parameters_(), {})
+        self.assertIn(table, self.cff.dimuonTablesTask.items)
 
     def test_cpp_parameters_match_config(self):
         with open(os.path.join(PKG, "plugins", "DiMuonVertexProducer.cc")) as handle:
