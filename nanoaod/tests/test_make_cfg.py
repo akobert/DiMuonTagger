@@ -155,26 +155,83 @@ class TestSubmit(unittest.TestCase):
         long_primary = "/" + "X" * 150 + "/Run3Summer22MiniAODv4-GT-v1/MINIAODSIM"
         self.assertLessEqual(len(submit.request_name("v1", "2022preEE", long_primary)), submit.MAX_REQUEST_NAME)
 
-    def test_dry_run(self):
+    # Two 2022preEE datasets sharing one config.
+    QCD = next(iter(DATASETS))
+    HAHM = [d for d in DATASETS if d.startswith("/HTo2Zd")][0]
+
+    def dry_run(self, on_disk, *extra):
+        """Run submit.py --dry-run on QCD + HAHM; on_disk: {dataset: bool or None}, or None for no
+        datasets.json. Returns (exit code or SystemExit message, stdout, stderr)."""
         with tempfile.TemporaryDirectory() as tmp:
             cfg = os.path.join(tmp, "nano_cfg.py")
             open(cfg, "w").close()
-            dataset = next(iter(DATASETS))
-            index = {dataset: {"era": "2022preEE", "release": "13_0", "process": "qcd_muenriched",
-                               "cfg": os.path.relpath(cfg, submit.REPO)}}
+            index = {d: {"era": "2022preEE", "release": "13_0", "process": "x",
+                         "cfg": os.path.relpath(cfg, submit.REPO)} for d in (self.QCD, self.HAHM)}
             index_path = os.path.join(tmp, "index.json")
             with open(index_path, "w") as handle:
                 json.dump(index, handle)
-            out = io.StringIO()
-            with contextlib.redirect_stdout(out):
-                code = submit.main(["--tag", "v1", "--index", index_path, "--dry-run"])
-            self.assertEqual(code, 0)
-            settings = json.loads(out.getvalue().split("\n1 tasks")[0])
-            self.assertEqual(settings["Site.storageSite"], "T2_US_Nebraska")
-            self.assertEqual(settings["Data.outputDatasetTag"], "DiMuonNano_v1_2022preEE")
-            self.assertTrue(settings["Data.publication"])
-            self.assertEqual(settings["Data.inputDataset"], dataset)
-            self.assertTrue(settings["Data.outLFNDirBase"].endswith("/DiMuonNano/v1"))
+            resolved = os.path.join(tmp, "datasets.json")
+            if on_disk is not None:
+                with open(resolved, "w") as handle:
+                    json.dump({"datasets": [{"dataset": d, "on_disk": v} for d, v in on_disk.items()]}, handle)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                try:
+                    code = submit.main(["--tag", "v1", "--index", index_path, "--resolved", resolved,
+                                        "--dry-run", *extra])
+                except SystemExit as exc:
+                    code = exc.code
+            return code, out.getvalue(), err.getvalue()
+
+    @staticmethod
+    def tasks(out):
+        """Settings dicts printed by --dry-run."""
+        decoder, tasks, text = json.JSONDecoder(), [], out
+        while text.lstrip().startswith("{"):
+            obj, end = decoder.raw_decode(text.lstrip())
+            tasks.append(obj)
+            text = text.lstrip()[end:]
+        return tasks
+
+    def test_tape_only_skipped(self):
+        code, out, err = self.dry_run({self.QCD: True, self.HAHM: False})
+        self.assertEqual(code, 0)
+        self.assertEqual([t["Data.inputDataset"] for t in self.tasks(out)], [self.QCD])
+        self.assertIn("skipping 1 tape-only datasets", err)
+        self.assertIn(self.HAHM, err)
+        self.assertIn("1 tasks listed, 0 failed, 1 tape-only skipped", out)
+
+    def test_include_tape(self):
+        code, out, err = self.dry_run({self.QCD: True, self.HAHM: False}, "--include-tape")
+        self.assertEqual(code, 0)
+        self.assertEqual(len(self.tasks(out)), 2)
+        self.assertNotIn("skipping", err)
+
+    def test_all_tape_only(self):
+        code, out, _ = self.dry_run({self.QCD: False, self.HAHM: False})
+        self.assertIn("all selected datasets are tape-only", str(code))
+
+    def test_unknown_status_submitted_with_warning(self):
+        code, out, err = self.dry_run({self.QCD: True, self.HAHM: None})  # HAHM: sites not checked
+        self.assertEqual(code, 0)
+        self.assertEqual(len(self.tasks(out)), 2)
+        self.assertIn("no disk/tape status for 1 datasets", err)
+
+    def test_missing_resolved_file(self):
+        code, out, err = self.dry_run(None)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(self.tasks(out)), 2)
+        self.assertIn("not found, so tape-only datasets cannot be recognised", err)
+
+    def test_dry_run(self):
+        code, out, _ = self.dry_run({self.QCD: True, self.HAHM: True})
+        self.assertEqual(code, 0)
+        settings = {t["Data.inputDataset"]: t for t in self.tasks(out)}[self.QCD]
+        self.assertEqual(settings["Site.storageSite"], "T2_US_Nebraska")
+        self.assertEqual(settings["Data.outputDatasetTag"], "DiMuonNano_v1_2022preEE")
+        self.assertTrue(settings["Data.publication"])
+        self.assertEqual(settings["Data.inputDataset"], self.QCD)
+        self.assertTrue(settings["Data.outLFNDirBase"].endswith("/DiMuonNano/v1"))
 
     def test_bad_tag(self):
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):

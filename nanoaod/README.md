@@ -204,6 +204,16 @@ coffea fileset builder looks up. Extension samples of the same primary and era
 publish into one output dataset. `--era`, `--process`, `--splitting` and
 `--units-per-job` narrow or tune a submission.
 
+**Tape-only datasets are skipped.** `submit.py` reads each dataset's disk
+status from the resolver's `samples/resolved/datasets.json` (`--resolved`) and
+skips datasets that exist only on tape, which jobs can't read. It lists the
+skipped ones and counts them in the final line. `--include-tape` submits them
+anyway, once they have been recalled to disk with a Rucio rule. Datasets
+without disk status are submitted with a warning: either they're missing from
+`datasets.json`, which describes only the latest resolver run, or the resolver
+ran with `--no-sites`. Rerun the resolver without `--no-sites` and without
+filters before a full submission.
+
 ## Offline tests
 
 The tests run without CMSSW:

@@ -11,6 +11,12 @@ Output goes to /store/user/<user>/DiMuonNano/<tag>/ at the storage site
 /<primary>/<user>-DiMuonNano_<tag>_<era>-<hash>/USER. Extension samples of the
 same primary and era publish into the same output dataset.
 
+Datasets that exist only on tape cannot be read until they are recalled, so
+they are skipped. Disk status comes from the resolver's
+samples/resolved/datasets.json (--resolved). --include-tape submits them anyway,
+e.g. after a Rucio recall. Datasets without disk status (not in that file, or
+resolved with --no-sites) are submitted with a warning.
+
     python3 nanoaod/crab/submit.py --tag v1 --dry-run        # show what would be submitted
     python3 nanoaod/crab/submit.py --tag v1 --era 2022postEE --process qcd_muenriched
 """
@@ -30,7 +36,21 @@ sys.path.insert(0, NANOAOD)
 from make_cfg import release_series  # noqa: E402
 
 DEFAULT_INDEX = os.path.join(NANOAOD, "cfg", "index.json")
+DEFAULT_RESOLVED = os.path.join(REPO, "samples", "resolved", "datasets.json")
 MAX_REQUEST_NAME = 100
+SHOW_SKIPPED = 10
+
+
+def load_disk_status(path):
+    """{dataset: on_disk} from the resolver's datasets.json; None if the file is missing.
+
+    Datasets the resolver did not check (on_disk null) are left out.
+    """
+    if not os.path.exists(path):
+        return None
+    with open(path) as handle:
+        records = json.load(handle).get("datasets", [])
+    return {rec["dataset"]: bool(rec["on_disk"]) for rec in records if rec.get("on_disk") is not None}
 
 
 def request_name(tag, era, dataset):
@@ -90,6 +110,10 @@ def main(argv=None):
                         help="minutes of job runtime for Automatic, else files/events per job")
     parser.add_argument("--max-memory", type=int, default=2500, help="MB per job")
     parser.add_argument("--work-area", default="crab_projects")
+    parser.add_argument("--resolved", default=DEFAULT_RESOLVED,
+                        help="resolver output with disk/tape status (datasets.json)")
+    parser.add_argument("--include-tape", action="store_true",
+                        help="also submit datasets that are only on tape (e.g. after a recall)")
     parser.add_argument("--dry-run", action="store_true", help="print the tasks without submitting")
     args = parser.parse_args(argv)
 
@@ -104,7 +128,13 @@ def main(argv=None):
     if current is None and not args.dry_run:
         sys.exit("Run inside the CMSSW area (cmsenv) that matches the configs.")
 
-    selected = []
+    disk = load_disk_status(args.resolved)
+    if disk is None:
+        print("warning: %s not found, so tape-only datasets cannot be recognised; nothing is skipped "
+              "for that reason (run scripts/resolve_samples.py first)" % args.resolved, file=sys.stderr)
+        disk = {}
+
+    selected, tape_only, unknown = [], [], []
     for dataset, entry in sorted(index.items()):
         if args.era and entry["era"] not in args.era:
             continue
@@ -115,9 +145,28 @@ def main(argv=None):
         if not os.path.exists(os.path.join(REPO, entry["cfg"])):
             print("missing config %s for %s; rerun make_cfg.py" % (entry["cfg"], dataset), file=sys.stderr)
             continue
+        on_disk = disk.get(dataset)
+        if on_disk is False and not args.include_tape:
+            tape_only.append(dataset)
+            continue
+        if on_disk is None:
+            unknown.append(dataset)
         selected.append((dataset, entry))
+
+    if tape_only:
+        print("skipping %d tape-only datasets (--include-tape submits them once recalled):"
+              % len(tape_only), file=sys.stderr)
+        for dataset in tape_only[:SHOW_SKIPPED]:
+            print("  " + dataset, file=sys.stderr)
+        if len(tape_only) > SHOW_SKIPPED:
+            print("  ... and %d more (see samples/resolved/tape_only.txt)" % (len(tape_only) - SHOW_SKIPPED),
+                  file=sys.stderr)
+    if unknown and disk:
+        print("warning: no disk/tape status for %d datasets (not in %s, or resolved with --no-sites); "
+              "submitting them anyway" % (len(unknown), os.path.basename(args.resolved)), file=sys.stderr)
     if not selected:
-        sys.exit("Nothing to submit (check --era/--process and the CMSSW release).")
+        sys.exit("Nothing to submit (check --era/--process, the CMSSW release%s)."
+                 % (", and --include-tape: all selected datasets are tape-only" if tape_only else ""))
 
     if args.dry_run:
         user = os.environ.get("USER", "<user>")
@@ -139,8 +188,8 @@ def main(argv=None):
             failures.append((dataset, exc))
             print("  failed: %s" % exc, file=sys.stderr)
 
-    print("%d tasks %s, %d failed" % (len(selected) - len(failures),
-                                      "listed" if args.dry_run else "submitted", len(failures)))
+    print("%d tasks %s, %d failed, %d tape-only skipped" % (
+        len(selected) - len(failures), "listed" if args.dry_run else "submitted", len(failures), len(tape_only)))
     return 1 if failures else 0
 
 
