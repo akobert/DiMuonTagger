@@ -21,7 +21,7 @@ MINIAODSIM and NANOAODSIM. Exact DAS dataset names are resolved on lxplus/LPC by
 | signal | tt̄ + ALP, a→μμ (`ttbar_alp_mumu`) | Low-mass (0.35–60 GeV) displaced dimuons in Run 3; 118 samples | Run 3 confirmed |
 | signal | B→Kφ, φ→μμ (`b_to_k_phi_mumu`) | Low-mass coverage from the scouting searches. No Run 3 MiniAOD sample exists | Run 2 only, unverified |
 | background | QCD μ-enriched (`qcd_muenriched`) | Dominant: b/c semileptonic decays, b→c→μ sequential pairs with real displaced vertices, π/K decay in flight | standard |
-| background | b-hadron → J/ψ(μμ) (`nonprompt_jpsi`) | Genuinely displaced (~mm) μμ vertices; irreducible at small displacement | unverified |
+| background | b-hadron → J/ψ(μμ) (`nonprompt_jpsi`) | Genuinely displaced (~mm) μμ vertices; irreducible at small displacement. Run 3: B⁺→J/ψK⁺ only | Run 3: 2024 confirmed |
 | background | Drell–Yan (`drell_yan`) | Prompt μμ incl. low mass and Z→ττ; keeps the tagger off prompt vertices | standard |
 | background | tt̄ (`ttbar`) | Heavy-flavour vertices at higher pT, mixed prompt/non-prompt pairs | standard |
 | background | prompt J/ψ, Υ (`prompt_quarkonia`) | Narrow prompt resonances; stops the tagger learning the mass | unverified |
@@ -36,6 +36,14 @@ The Run 3 signal and control patterns come from a `--discover` run on
 `_Par-`, so most signals have two patterns. All of them require `13p6TeV`,
 which keeps out 14 TeV samples. HAHM samples whose dark Higgs decays to b quarks
 or photons share the `HAHM` prefix and are excluded.
+
+Background names changed in 2024 too: bins and filters moved behind `_Bin-` and
+`_Fil-`, and inclusive Drell–Yan and W+jets are split by lepton flavour (only
+the μ and τ samples are used). The 2024 background patterns come from DAS
+listings on 2026-11-18. Only nominal samples are listed: the tW patterns are
+exact names because `TWminusto*` also matched 42 top-mass, hdamp and
+diagram-subtraction variations, and the non-prompt J/ψ uses B⁺→J/ψK⁺ alone
+because `B*ToJpsi*` matched 32 samples with 2.9 billion events in 2024.
 
 **Not covered by MC:** cosmic-ray muons. The published analyses estimate them
 from cosmic and NoBPTX data, and a tagger needs that too, especially at large

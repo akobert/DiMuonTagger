@@ -169,10 +169,14 @@ Checked by running in CMSSW_13_0_25 on 2022 ttbar MiniAODv4:
 - MiniAOD keeps the displaced muons' `outerTrack`, so Displaced legs are fitted;
 - the customisation adds every custom branch.
 
-Still to check:
-- the CMSSW_15_0 build and 2024 inputs;
-- 124X MiniAODv3 inputs;
-- how often Kalman fits fail far outside the tracker on signal (the "fit valid" column of `check_nano.py`).
+Also checked:
+- CMSSW_15_0 (el8) builds and runs on 2024 HAHM MiniAODv6;
+- 124X MiniAODv3 inputs work: on 2022 B⁰→J/ψK*⁰ the Muon–Muon pairs have a
+  median Lxy of 0.1 cm (the B flight distance; 0.02 cm in ttbar) and all fits
+  are valid.
+
+Still to check: how often Kalman fits fail far outside the tracker on signal
+(the "fit valid" column of `check_nano.py`).
 
 ## Production with CRAB
 

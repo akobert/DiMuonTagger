@@ -20,6 +20,15 @@
 # HTo2ZdTo2Mu2X_Par-MZd-20-Ctau-10mm_... in 2024), so most signals need two
 # patterns. All Run 3 signal patterns require 13p6TeV, which keeps out 14 TeV
 # samples that sit in the same campaigns but match no era.
+#
+# Background names changed in 2024 too: bins moved behind `_Bin-` and filters
+# behind `_Fil-` (QCD_PT-15to20_MuEnrichedPt5_... vs
+# QCD_Bin-PT-15to20_Fil-MuEnriched_...), and inclusive DY and W+jets are split
+# by lepton flavour (DYto2Mu-2Jets_..., WtoMuNu-2Jets_...). The 2024 background
+# patterns below come from DAS listings of RunIII2024Summer24MiniAOD (2026-11-18).
+#
+# Patterns name the nominal samples only. Systematic variations (top mass,
+# hdamp, tune, DGamma, ...) are left out: they would multiply the production.
 
 default_tiers: [MINIAODSIM, NANOAODSIM]   # AODSIM can be requested with --tier
 
@@ -155,7 +164,9 @@ processes:
       displaced vertices), pi/K decay in flight, random two-track crossings.
     patterns:
       run2: ["QCD_Pt-*_MuEnrichedPt5_TuneCP5_13TeV*", "QCD_Pt-20_MuEnrichedPt15_TuneCP5_13TeV*"]
-      run3: ["QCD_P*_MuEnrichedPt5_TuneCP5_13p6TeV*", "QCD_P*_MuEnrichedPt15_TuneCP5_13p6TeV*"]
+      run3:
+        - "QCD_P*_MuEnrichedPt5_TuneCP5_13p6TeV*"                   # 2022/23
+        - "QCD_Bin-PT-*_Fil-MuEnriched_TuneCP5_13p6TeV*"            # 2024
 
   nonprompt_jpsi:
     role: background
@@ -164,9 +175,15 @@ processes:
     description: >-
       b-hadron -> J/psi(mu mu) X. Genuinely displaced (~mm) dimuon vertices
       at m = 3.1 GeV; the irreducible background at small displacement.
+      Run 3 uses one channel, B+ -> J/psi K+: the B+, B0 and Bs lifetimes
+      agree within 10%, so the vertex displacement looks the same, and the
+      broad "B*ToJpsi*" pattern matched 32 samples (2.9 billion events in
+      2024 alone).
     patterns:
       run2: ["B*ToJpsi*", "B*toJpsi*"]
-      run3: ["B*ToJpsi*", "B*toJpsi*"]
+      # 2024: ButoJpsiK-Jpsito2Mu_[Fil-Mu_]TuneCP5_...; 2022/23 is expected to
+      # use underscores (as BdtoJpsiKstar_Jpsito2Mu_KstartoKPi_... does).
+      run3: ["ButoJpsiK*Jpsito2Mu*_TuneCP5_13p6TeV*"]
 
   drell_yan:
     role: background
@@ -183,6 +200,12 @@ processes:
         - "DYto2L-2Jets_MLL-50_TuneCP5_13p6TeV_amcatnloFXFX-pythia8"
         - "DYto2L-2Jets_MLL-10to50_TuneCP5_13p6TeV_amcatnloFXFX-pythia8"
         - "DYto2Mu_MLL-*_TuneCP5_13p6TeV_powheg-pythia8"
+        # 2024: inclusive samples are split by lepton flavour (no ee).
+        - "DYto2Mu-2Jets_Bin-MLL-50_TuneCP5_13p6TeV_amcatnloFXFX-pythia8"
+        - "DYto2Mu-2Jets_Bin-MLL-10to50_TuneCP5_13p6TeV_amcatnloFXFX-pythia8"
+        - "DYto2Tau-2Jets_Bin-MLL-50_TuneCP5_13p6TeV_amcatnloFXFX-pythia8"
+        - "DYto2Tau-2Jets_Bin-MLL-10to50_TuneCP5_13p6TeV_amcatnloFXFX-pythia8"
+        - "DYto2Mu_Bin-MLL-*_TuneCP5_13p6TeV_powheg-pythia8"
 
   ttbar:
     role: background
@@ -208,20 +231,24 @@ processes:
       vertex; useful to keep the tagger from learning the mass.
     patterns:
       run2: ["JpsiToMuMu*", "Jpsito2Mu*", "Upsilon*"]
-      run3: ["JpsiToMuMu*", "Jpsito2Mu*", "Upsilon*"]
+      run3: ["Jpsito2Mu*_13p6TeV*", "Upsilon*_13p6TeV*"]
 
   single_top_tw:
     role: background
     priority: secondary
     status: standard
-    description: tW production; same mechanisms as ttbar at lower rate.
+    description: >-
+      tW production; same mechanisms as ttbar at lower rate. Dilepton and
+      semileptonic decays, as for ttbar.
     patterns:
       run2:
         - "ST_tW_top_5f_*_TuneCP5_13TeV-powheg-pythia8"
         - "ST_tW_antitop_5f_*_TuneCP5_13TeV-powheg-pythia8"
       run3:
-        - "TWminusto*_TuneCP5_13p6TeV_powheg-pythia8"
-        - "TbarWplusto*_TuneCP5_13p6TeV_powheg-pythia8"
+        - "TWminusto2L2Nu_TuneCP5_13p6TeV_powheg-pythia8"
+        - "TbarWplusto2L2Nu_TuneCP5_13p6TeV_powheg-pythia8"
+        - "TWminustoLNu2Q_TuneCP5_13p6TeV_powheg-pythia8"
+        - "TbarWplustoLNu2Q_TuneCP5_13p6TeV_powheg-pythia8"
 
   wjets:
     role: background
@@ -233,6 +260,11 @@ processes:
       run3:
         - "WtoLNu-2Jets_TuneCP5_13p6TeV_amcatnloFXFX-pythia8"
         - "WtoLNu-4Jets_TuneCP5_13p6TeV_madgraphMLM-pythia8"
+        # 2024: split by lepton flavour (no e nu).
+        - "WtoMuNu-2Jets_TuneCP5_13p6TeV_amcatnloFXFX-pythia8"
+        - "WtoTauNu-2Jets_TuneCP5_13p6TeV_amcatnloFXFX-pythia8"
+        - "WtoMuNu-4Jets_TuneCP5_13p6TeV_madgraphMLM-pythia8"
+        - "WtoTauNu-4Jets_TuneCP5_13p6TeV_madgraphMLM-pythia8"
 
   diboson:
     role: background
