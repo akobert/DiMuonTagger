@@ -26,6 +26,11 @@ Outputs (default samples/resolved/):
     lists/<tier>/<era>/<process>.txt   preferred dataset names, one per line
     discovery_<run>_<tier>.txt     (--discover) candidate signal primaries
 
+Preferred datasets: per process, primary, era and tier, the best processing
+version (catalog `processing_prefixes`: a preferred prefix such as
+FixLLSleptonSim, else no prefix, else any other prefix; excluded prefixes such
+as FastSim never), then the newest MiniAOD/NanoAOD format.
+
 datasets.csv/json and coverage.txt describe only the latest run. List files are
 replaced for the processes, runs and tiers that run queried (stale ones are
 removed); lists outside that scope, or whose DAS query failed, are kept.
@@ -170,6 +175,11 @@ def load_catalog(path):
                     re.compile(regex)
                 except re.error as exc:
                     problems.append("runs.%s.eras.%s.%s: bad regex (%s)" % (run, era, tier, exc))
+    prefixes = cat.setdefault("processing_prefixes", {})
+    for key in ("prefer", "exclude"):
+        prefixes[key] = list(prefixes.get(key) or [])
+    for key in set(prefixes) - {"prefer", "exclude"}:
+        problems.append("processing_prefixes.%s: only prefer and exclude are known" % key)
     for name, proc in cat.get("processes", {}).items():
         if proc.get("role") not in ("signal", "background", "control"):
             problems.append("processes.%s: role must be signal/background/control" % name)
@@ -195,6 +205,32 @@ def format_version(processed):
     if not match:
         return 0
     return int(match.group(1) or 1)
+
+
+_GT_START = re.compile(r"(?:^|_)\d+X_")
+
+
+def processing_prefix(processed):
+    """Prefix of the processing string, before the global tag ('' if none).
+
+    'Run3Summer22EEMiniAODv4-FixLLSleptonSim_130X_mcRun3_2022_realistic_postEE_v6-v2'
+    -> 'FixLLSleptonSim'. Global tags start with '<release>X_' (130X_, 106X_, ...).
+    """
+    body = processed.split("-", 1)[1] if "-" in processed else processed
+    match = _GT_START.search(body)
+    return body[:match.start()] if match and match.start() > 0 else ""
+
+
+def processing_rank(cat, prefix):
+    """2 preferred prefix, 1 no prefix, 0 any other prefix, None excluded."""
+    rules = cat.get("processing_prefixes", {})
+    if not prefix:
+        return 1
+    if any(fnmatch.fnmatchcase(prefix, p) for p in rules.get("exclude", [])):
+        return None
+    if any(fnmatch.fnmatchcase(prefix, p) for p in rules.get("prefer", [])):
+        return 2
+    return 0
 
 
 # --------------------------------------------------------------- resolving --
@@ -255,16 +291,23 @@ def resolve(cat, das, args, processes, runs, tiers):
                 "process": name, "run": run, "era": classify_era(cat, run, tier, processed),
                 "tier": tier, "primary": prim, "dataset": dataset,
                 "format_version": format_version(processed),
+                "processing": processing_prefix(processed),
             }
 
-    # Preferred = newest MiniAOD/NanoAOD format within (process, primary, era, tier).
-    newest = defaultdict(int)
+    # Preferred, within (process, primary, era, tier): the best processing
+    # version, then the newest MiniAOD/NanoAOD format. Extensions tie and are
+    # all kept; excluded processing versions are never preferred.
+    best = {}
+    for rec in records.values():
+        rank = processing_rank(cat, rec["processing"])
+        rec["_order"] = None if rank is None else (rank, rec["format_version"])
+        key = (rec["process"], rec["primary"], rec["era"], rec["tier"])
+        if rec["_order"] is not None and rec["_order"] > best.get(key, (-1, -1)):
+            best[key] = rec["_order"]
     for rec in records.values():
         key = (rec["process"], rec["primary"], rec["era"], rec["tier"])
-        newest[key] = max(newest[key], rec["format_version"])
-    for rec in records.values():
-        rec["preferred"] = rec["era"] != UNCLASSIFIED and \
-            rec["format_version"] == newest[(rec["process"], rec["primary"], rec["era"], rec["tier"])]
+        order = rec.pop("_order")
+        rec["preferred"] = rec["era"] != UNCLASSIFIED and order is not None and order == best.get(key)
 
     unique = sorted({rec["dataset"] for rec in records.values()})
     if args.no_summary:
@@ -303,11 +346,37 @@ def resolve(cat, das, args, processes, runs, tiers):
         print("\nDatasets claimed by more than one process (tighten the patterns):")
         for dataset, names in sorted(shared.items()):
             print("  %s: %s" % (",".join(sorted(names)), dataset))
+    report_processing(cat, rows)
     unclassified = [r["dataset"] for r in rows if r["era"] == UNCLASSIFIED]
     if unclassified:
         print("\n%d datasets did not match any era regex (listed in datasets.csv as '%s')."
               % (len(unclassified), UNCLASSIFIED))
     return report_failures(failures)
+
+
+def report_processing(cat, rows):
+    """Datasets found and used per processing prefix (special productions)."""
+    found, used = defaultdict(int), defaultdict(int)
+    for rec in rows:
+        if rec["processing"] and rec["era"] != UNCLASSIFIED:
+            found[rec["processing"]] += 1
+            used[rec["processing"]] += rec["preferred"]
+    if not found:
+        return
+    labels = {2: "preferred", 1: "", 0: "fallback", None: "excluded"}
+    print("\nSpecial productions (processing prefix: datasets used / found; fallback = used only "
+          "without a standard version):")
+    for prefix in sorted(found):
+        print("  %-28s %-9s %4d / %d" % (prefix, labels[processing_rank(cat, prefix)], used[prefix], found[prefix]))
+    # samples that exist only in excluded versions
+    groups = defaultdict(list)
+    for rec in rows:
+        if rec["era"] != UNCLASSIFIED:
+            groups[(rec["process"], rec["primary"], rec["era"], rec["tier"])].append(rec)
+    lost = sorted(k for k, recs in groups.items() if not any(r["preferred"] for r in recs))
+    if lost:
+        print("%d samples exist only in excluded productions and are not used, e.g. %s %s %s"
+              % (len(lost), lost[0][0], lost[0][2], lost[0][1]))
 
 
 def era_index(cat, run, era):
@@ -318,7 +387,8 @@ def era_index(cat, run, era):
 def write_outputs(cat, args, rows, processes, runs, tiers, failed_scopes=frozenset()):
     os.makedirs(args.out, exist_ok=True)
     fields = ["role", "priority", "process", "run", "era", "tier", "preferred",
-              "nevents", "nfiles", "size_gb", "on_disk", "disk_sites", "tape_sites", "dataset"]
+              "nevents", "nfiles", "size_gb", "on_disk", "disk_sites", "tape_sites", "dataset",
+              "processing"]  # appended last, so column numbers used with awk stay the same
     with open(os.path.join(args.out, "datasets.csv"), "w", newline="") as handle:
         # lineterminator: the csv default is \r\n, which leaves a stray \r on the
         # last column (the dataset name) for awk/cut and shell scripts.

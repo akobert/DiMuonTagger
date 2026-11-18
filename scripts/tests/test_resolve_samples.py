@@ -175,5 +175,62 @@ class TestDiskSites(_ResolverCase):
         self.assertEqual(qcd.split()[3], "1")  # plain count without site info
 
 
+SMU = "/SMuonToMuGravitino_M-100_ctau-10mm_TuneCP5_13p6TeV_pythia8/"
+SMU_STD = SMU + "Run3Summer22EEMiniAODv4-130X_mcRun3_2022_realistic_postEE_v6-v2/MINIAODSIM"
+SMU_FIX = SMU + "Run3Summer22EEMiniAODv4-FixLLSleptonSim_130X_mcRun3_2022_realistic_postEE_v6-v2/MINIAODSIM"
+TT = "/TTto2L2Nu_TuneCP5_13p6TeV_powheg-pythia8/"
+TT_STD = TT + "Run3Summer22EEMiniAODv4-130X_mcRun3_2022_realistic_postEE_v6-v2/MINIAODSIM"
+TT_EXT = TT + "Run3Summer22EEMiniAODv4-130X_mcRun3_2022_realistic_postEE_v6_ext1-v2/MINIAODSIM"
+TT_RAW = TT + "Run3Summer22EEMiniAODv4-KeepRAW_130X_mcRun3_2022_realistic_postEE_v6-v2/MINIAODSIM"
+TT_PU = TT + "Run3Summer22EEMiniAODv4-Poisson60KeepRAW_130X_mcRun3_2022_realistic_postEE_v6-v2/MINIAODSIM"
+TT_FS = TT + "RunIII2024Summer24MiniAODv6-FS_150X_mcRun3_2024_realistic_v2-v2/MINIAODSIM"
+QCD_POG = ("/QCD_PT-15to20_MuEnrichedPt5_TuneCP5_13p6TeV_pythia8/"
+           "Run3Summer23MiniAODv4-MUO_POG_130X_mcRun3_2023_realistic_v14-v2/MINIAODSIM")
+
+
+class TestProcessingVersions(_ResolverCase):
+    def test_processing_prefix(self):
+        cases = {
+            "Run3Summer22EEMiniAODv4-130X_mcRun3_2022_realistic_postEE_v6-v2": "",
+            "Run3Summer22EEMiniAODv4-130X_mcRun3_2022_realistic_postEE_v6_ext1-v2": "",
+            "Run3Summer22EEMiniAODv4-FixLLSleptonSim_130X_mcRun3_2022_realistic_postEE_v6-v2": "FixLLSleptonSim",
+            "Run3Summer23MiniAODv4-MUO_POG_130X_mcRun3_2023_realistic_v14-v2": "MUO_POG",
+            "RunIII2024Summer24MiniAODv6-FS_150X_mcRun3_2024_realistic_v2-v2": "FS",
+            "RunIISummer20UL18MiniAODv2-106X_upgrade2018_realistic_v16_L1v1-v2": "",
+            "Run3Summer21MiniAOD-Pilot_120X_mcRun3_2021_realistic_v5-v3": "Pilot",
+        }
+        for processed, prefix in cases.items():
+            self.assertEqual(resolve_samples.processing_prefix(processed), prefix, processed)
+
+    def test_processing_rank(self):
+        cat = resolve_samples.load_catalog(resolve_samples.DEFAULT_CATALOG)
+        rank = lambda prefix: resolve_samples.processing_rank(cat, prefix)
+        self.assertEqual(rank("FixLLSleptonSim"), 2)
+        self.assertEqual(rank(""), 1)
+        self.assertEqual(rank("KeepRAW"), 0)
+        self.assertIsNone(rank("FS"))
+        self.assertIsNone(rank("Poisson60KeepRAW"))
+        self.assertIsNone(rank("Poisson60ForMUOVal"))
+
+    def test_preferred_versions(self):
+        code, out = self.resolve([SMU_STD, SMU_FIX, TT_STD, TT_EXT, TT_RAW, TT_PU, TT_FS, QCD_POG])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.read_list("2022postEE", "displaced_susy_uncorrelated"), [SMU_FIX])
+        self.assertEqual(self.read_list("2022postEE", "ttbar"), sorted([TT_STD, TT_EXT]))  # extensions kept
+        self.assertFalse(os.path.exists(self.list_file("2024", "ttbar")))       # FastSim only: nothing
+        self.assertEqual(self.read_list("2023preBPix", "qcd_muenriched"), [QCD_POG])  # fallback: no standard
+        with open(os.path.join(self.out, "datasets.csv")) as handle:
+            rows = {r["dataset"]: r for r in csv.DictReader(handle)}
+        self.assertEqual(rows[TT_RAW]["processing"], "KeepRAW")
+        self.assertEqual(rows[TT_RAW]["preferred"], "False")
+        self.assertEqual(rows[TT_FS]["preferred"], "False")
+        self.assertEqual(list(rows[TT_STD])[13], "dataset")  # awk column 14 stays the dataset
+        self.assertIn("Special productions", out)
+        self.assertRegex(out, r"FixLLSleptonSim\s+preferred\s+1 / 1")
+        self.assertRegex(out, r"FS\s+excluded\s+0 / 1")
+        self.assertRegex(out, r"KeepRAW\s+fallback\s+0 / 1")
+        self.assertIn("1 samples exist only in excluded productions", out)
+
+
 if __name__ == "__main__":
     unittest.main()

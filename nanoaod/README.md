@@ -30,6 +30,8 @@ the config from the catalog role (a process can override it with
   coffea processor does this.
 - `check_nano.py` prints `events written: N of M processed` and fails if
   `genEventCount` is smaller than the number of events written.
+- Checked on B⁺→J/ψK⁺: 43 of 500 events written in 2022 (CMSSW_13_0) and 63
+  of 500 in 2024 (CMSSW_15_0), with `genEventCount` 500 in both.
 
 **Duplicate muons.** Many displaced muons are a second reconstruction of a muon
 that is also in `Muon`. In a 2022 ttbar test without handling this, half of
@@ -118,8 +120,9 @@ nanoaod/
 | 2024 | CMSSW_15_0_X | v6: `Run3_2024` |
 
 The global tag comes from the MiniAOD processed name, e.g.
-`130X_mcRun3_2022_realistic_postEE_v6`. Override it with
-`make_cfg.py --conditions`.
+`130X_mcRun3_2022_realistic_postEE_v6`. A special-production prefix before it
+(`FixLLSleptonSim_`, `KeepRAW_`, …) is not part of the global tag and is
+dropped. Override the global tag with `make_cfg.py --conditions`.
 
 ## Setup (lxplus)
 

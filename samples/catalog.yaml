@@ -36,6 +36,18 @@
 
 default_tiers: [MINIAODSIM, NANOAODSIM]   # AODSIM can be requested with --tier
 
+# Processed names are <campaign>-[<prefix>_]<global tag>[_extN]-vN. Standard
+# samples have no prefix; special productions add one. Per process, primary
+# and era the resolver uses a `prefer` prefix if one exists, else the standard
+# sample, else any other prefix (KeepRAW, MUO_POG, ...). `exclude` prefixes are
+# never used. Globs (`*` only), matched against the whole prefix.
+processing_prefixes:
+  prefer:
+    - FixLLSleptonSim   # re-simulation fixing long-lived sleptons; supersedes the standard sample
+  exclude:
+    - FS                # FastSim: no realistic displaced-muon reconstruction
+    - Poisson*          # flat Poisson pileup (e.g. Poisson60KeepRAW), not the realistic profile
+
 runs:
   run2:
     sqrt_s: "13 TeV"

@@ -41,7 +41,8 @@ sys.path.insert(0, os.path.join(REPO, "scripts"))
 
 import yaml  # noqa: E402
 
-from resolve_samples import UNCLASSIFIED, classify_era, format_version, load_catalog  # noqa: E402
+from resolve_samples import (UNCLASSIFIED, classify_era, format_version, load_catalog,  # noqa: E402
+                             processing_prefix)
 
 DEFAULT_CATALOG = os.path.join(REPO, "samples", "catalog.yaml")
 DEFAULT_ERAS = os.path.join(HERE, "eras.yaml")
@@ -71,11 +72,16 @@ def split_dataset(dataset):
 
 
 def global_tag(processed):
-    """GT from a processed name: Run3Summer22MiniAODv4-<GT>[_extN]-vN."""
+    """GT from a processed name: Run3Summer22MiniAODv4-[<prefix>_]<GT>[_extN]-vN.
+
+    Special productions put a processing prefix before the GT
+    (FixLLSleptonSim_130X_..., FS_150X_...); it is not part of the GT.
+    """
     match = _GT_RE.match(processed)
     if not match:
         raise ValueError("cannot read a global tag from %r" % processed)
-    return match.group("gt")
+    prefix = processing_prefix(processed)
+    return match.group("gt")[len(prefix) + 1 if prefix else 0:]
 
 
 def describe(dataset, catalog, eras, conditions=None):

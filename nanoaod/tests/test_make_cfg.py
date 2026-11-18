@@ -64,6 +64,17 @@ class TestDescribe(unittest.TestCase):
             with self.assertRaises(ValueError, msg=dataset):
                 make_cfg.describe(dataset, self.catalog, self.eras)
 
+    def test_global_tag_drops_processing_prefix(self):
+        cases = {
+            "Run3Summer22EEMiniAODv4-FixLLSleptonSim_130X_mcRun3_2022_realistic_postEE_v6-v2":
+                "130X_mcRun3_2022_realistic_postEE_v6",
+            "Run3Summer23MiniAODv4-MUO_POG_130X_mcRun3_2023_realistic_v14_ext1-v2": "130X_mcRun3_2023_realistic_v14",
+            "RunIII2024Summer24MiniAODv6-FS_150X_mcRun3_2024_realistic_v2-v2": "150X_mcRun3_2024_realistic_v2",
+            "Run3Summer22MiniAODv4-130X_mcRun3_2022_realistic_v5-v2": "130X_mcRun3_2022_realistic_v5",
+        }
+        for processed, gt in cases.items():
+            self.assertEqual(make_cfg.global_tag(processed), gt, processed)
+
     def test_global_tag_needs_version_suffix(self):
         with self.assertRaises(ValueError):
             make_cfg.global_tag("Run3Summer22MiniAODv4")

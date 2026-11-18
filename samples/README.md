@@ -90,11 +90,22 @@ voms-proxy-init -voms cms -rfc -valid 192:00
      job submission. These still include tape-only datasets, so check
      `tape_only.txt` before submitting.
 
-   *Preferred* means the newest MiniAOD/NanoAOD format version in that era
-   (e.g. NanoAODv9 over v2, MiniAODv4 over v3). Extension samples (`_ext1`)
-   stay preferred because they add statistics. The script also prints patterns
-   that matched nothing, datasets claimed by two processes, and datasets that
-   fit no era.
+   *Preferred* is decided per process, primary dataset and era:
+   - **Production version first.** Special productions put a prefix before the
+     global tag in the processed name (`FixLLSleptonSim_130X_…`,
+     `MUO_POG_130X_…`). `processing_prefixes` in the catalog decides:
+     `FixLLSleptonSim` (fixed long-lived slepton simulation) beats the standard
+     sample; FastSim (`FS`) and flat Poisson pileup (`Poisson*`) are never used;
+     any other prefix (`KeepRAW`, `MUO_POG`, …) is used only when there is no
+     standard sample.
+   - **Then the newest format version** (e.g. NanoAODv9 over v2, MiniAODv4 over
+     v3).
+   - Extension samples (`_ext1`) stay preferred because they add statistics.
+
+   The script also prints patterns that matched nothing, the special
+   productions found and used, datasets claimed by two processes, and datasets
+   that fit no era. `datasets.csv` has the prefix in its last column,
+   `processing`.
 
 Useful options: `--process`, `--role`, `--run run3`, `--tier AODSIM`,
 `--no-summary` (skip event counts) and `--no-sites` (skip the disk/tape check;
