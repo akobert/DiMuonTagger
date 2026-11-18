@@ -22,12 +22,16 @@ def _jagged(counts, value, dtype):
     return ak.unflatten(np.full(int(sum(counts)), value, dtype=dtype), counts)
 
 
-def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, dsa_replaced=0, drop=None):
+def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, dsa_replaced=0, drop=None,
+               muon_gen=(0, 1, 0), dsa_gen=0, charges=(0, 0)):
     """Two events: 2 muons + 1 displaced muon, then 1 muon + 0 displaced; one pair each.
 
     The event-0 pair is Muon[leg_idx[0]] + DisplacedMuon[0]; the event-1 pair
     is Muon[0] + Muon[leg_idx[1]]. dsa_muon_idx / dsa_replaced are
     DisplacedMuon_muonIdx / _replaced of the event-0 displaced muon.
+    muon_gen: Muon_genPartIdx of the three muons (event 0: two, event 1: one);
+    dsa_gen: DisplacedMuon_genPartIdx of the displaced muon; charges:
+    DiMuonVtx_charge of the two pairs (0 = opposite sign, +-2 = same sign).
     """
     n_mu, n_dsa, n_vtx, n_gen = [2, 1], [1, 0], [1, 1], [3, 2]
     from check_nano import EXPECTED
@@ -42,7 +46,9 @@ def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, dsa_replaced=0, drop=None)
     dsa = fields("DisplacedMuon", n_dsa)
     dsa["muonIdx"] = ak.unflatten(np.array([dsa_muon_idx], np.int32), n_dsa)
     dsa["replaced"] = ak.unflatten(np.array([dsa_replaced], np.int32), n_dsa)
+    dsa["genPartIdx"] = ak.unflatten(np.array([dsa_gen], np.int16), n_dsa)
     vtx = fields("DiMuonVtx", n_vtx)
+    vtx["charge"] = ak.unflatten(np.array(charges, np.int16), n_vtx)
     # event 0: Muon leg_idx[0] + DisplacedMuon 0; event 1: Muon 0 + Muon leg_idx[1]
     vtx["mu1Idx"] = ak.unflatten(np.array([leg_idx[0], 0], np.int16), n_vtx)
     vtx["mu2Idx"] = ak.unflatten(np.array([0, leg_idx[1]], np.int16), n_vtx)
@@ -52,7 +58,8 @@ def write_file(path, leg_idx=(0, 0), dsa_muon_idx=-1, dsa_replaced=0, drop=None)
     vtx["lxyBS"] = ak.unflatten(np.array([2.5, -1.0], np.float32), n_vtx)
     vtx["lxyCP"] = ak.unflatten(np.array([2.4, 0.01], np.float32), n_vtx)
     branches = {
-        "Muon": ak.zip({"pt": _jagged(n_mu, 10.0, np.float32), "genPartIdx": _jagged(n_mu, 0, np.int16)}),
+        "Muon": ak.zip({"pt": _jagged(n_mu, 10.0, np.float32),
+                        "genPartIdx": ak.unflatten(np.array(muon_gen, np.int16), n_mu)}),
         "DisplacedMuon": ak.zip(dsa),
         "DiMuonVtx": ak.zip(vtx),
         "GenPart": ak.zip(fields("GenPart", n_gen)),
@@ -91,6 +98,30 @@ class TestCheckNano(unittest.TestCase):
         code, out = self.run_check(leg_idx=(0, 1))  # event 1 has a single muon: index 1 is bad
         self.assertEqual(code, 1, out)
         self.assertIn("1 indices point outside", out)
+        self.assertNotIn("same-gen", out)  # gen lookup skipped when indices are bad
+
+    @staticmethod
+    def same_gen(out, pair_type):
+        """(same-gen %, same-gen OS %) of a pair-type row."""
+        line = next(l for l in out.splitlines() if l.startswith(pair_type + " "))
+        return tuple(float(tok.rstrip("%")) for tok in line.split()[-2:])
+
+    def test_same_gen_columns(self):
+        # default: the Muon-Displaced pair (Muon[0], DisplacedMuon[0]) both match
+        # gen 0, opposite sign; the Muon-Muon pair is Muon[0] twice
+        code, out = self.run_check()
+        self.assertEqual(code, 0, out)
+        self.assertIn("same-gen OS", out)
+        self.assertEqual(self.same_gen(out, "Muon-Displaced"), (100.0, 100.0))
+        self.assertEqual(self.same_gen(out, "Muon-Muon"), (100.0, 100.0))
+        # same-sign copy: counted as same-gen, not as same-gen OS
+        _, out = self.run_check(charges=(2, 0))
+        self.assertEqual(self.same_gen(out, "Muon-Displaced"), (100.0, 0.0))
+        # different gen muons, or an unmatched leg: not same-gen
+        _, out = self.run_check(dsa_gen=1)
+        self.assertEqual(self.same_gen(out, "Muon-Displaced"), (0.0, 0.0))
+        _, out = self.run_check(dsa_gen=-1, muon_gen=(-1, 1, 0))
+        self.assertEqual(self.same_gen(out, "Muon-Displaced"), (0.0, 0.0))  # -1 == -1 is not a match
 
     def test_displaced_muon_match_index(self):
         # displaced muon kept, its copy Muon[1] dropped; Muon[1] is not a leg: fine

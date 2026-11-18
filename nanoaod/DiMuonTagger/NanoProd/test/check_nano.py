@@ -7,6 +7,10 @@ Checks that the custom branches exist, that DiMuonVtx leg indices point at
 existing Muon/DisplacedMuon rows, and that no leg is the dropped copy of a
 displaced/standard duplicate. Prints a short summary (candidates per event,
 duplicates resolved, pair types, fit success, Lxy quantiles, gen-match rate).
+In simulation the pair table also counts pairs whose two legs match the same
+generated muon ("same-gen": one muon reconstructed twice, whatever the
+charges), and the opposite-sign part of those ("same-gen OS", e.g. a copy
+with a wrongly measured charge).
 Exits non-zero if a branch is missing or a check fails. Needs uproot and
 awkward (both in CMSSW's Python 3).
 """
@@ -94,7 +98,31 @@ def dropped_copy_legs(ev):
     return bad
 
 
-def summarize(ev):
+def same_gen_muon(ev):
+    """Per DiMuonVtx row: both legs gen-matched to the same GenPart.
+
+    None without gen information. Assumes index_errors(ev) == 0.
+    """
+    if "Muon_genPartIdx" not in ev.fields:
+        return None
+    gen = {0: ak.to_numpy(ak.flatten(ev["Muon_genPartIdx"])).astype(np.int64),
+           1: ak.to_numpy(ak.flatten(ev["DisplacedMuon_genPartIdx"])).astype(np.int64)}
+    offsets = {0: _offsets(ev["nMuon"])[0], 1: _offsets(ev["nDisplacedMuon"])[0]}
+    _, n_vtx = _offsets(ev["nDiMuonVtx"])
+    vtx_event = np.repeat(np.arange(len(n_vtx)), n_vtx)
+    legs = []
+    for leg in ("mu1", "mu2"):
+        idx = ak.to_numpy(ak.flatten(ev["DiMuonVtx_%sIdx" % leg])).astype(np.int64)
+        typ = ak.to_numpy(ak.flatten(ev["DiMuonVtx_%sType" % leg])).astype(np.int64)
+        g = np.full(len(idx), -1, dtype=np.int64)
+        for t in (0, 1):
+            sel = typ == t
+            g[sel] = gen[t][offsets[t][vtx_event[sel]] + idx[sel]]
+        legs.append(g)
+    return (legs[0] >= 0) & (legs[0] == legs[1])
+
+
+def summarize(ev, indices_ok=True):
     vtx_valid = ak.flatten(ev["DiMuonVtx_valid"])
     t1 = ak.to_numpy(ak.flatten(ev["DiMuonVtx_mu1Type"])).astype(int)
     t2 = ak.to_numpy(ak.flatten(ev["DiMuonVtx_mu2Type"])).astype(int)
@@ -117,17 +145,25 @@ def summarize(ev):
               % (pct(matched), pct(matched & replaced), pct(matched & ~replaced)))
     if n_cand == 0:
         return
+    same_gen = same_gen_muon(ev) if indices_ok else None
     # "dup-like": same-sign legs within dR < 0.2, i.e. probably one muon reconstructed twice
-    print("\n%-22s %8s %10s %8s %10s %14s"
-          % ("pair type", "pairs", "fit valid", "has CP", "dup-like", "median lxyBS"))
+    header = "\n%-22s %8s %10s %8s %10s %14s" % ("pair type", "pairs", "fit valid", "has CP", "dup-like",
+                                                  "median lxyBS")
+    if same_gen is not None:
+        header += " %10s %12s" % ("same-gen", "same-gen OS")
+    print(header)
     for name in ("Muon-Muon", "Muon-Displaced", "Displaced-Displaced"):
         sel = np.array([PAIR_TYPES[(a, b)] == name for a, b in zip(t1, t2)], dtype=bool)
         if sel.any():
             fitted = sel & valid
             median = "%.3g cm" % np.median(lxy[fitted]) if fitted.any() else "-"
-            print("%-22s %8d %9.1f%% %7.1f%% %9.1f%% %14s"
-                  % (name, sel.sum(), 100 * valid[sel].mean(), 100 * (lxy_cp[sel] >= 0).mean(),
-                     100 * (same_sign[sel] & (dr[sel] < 0.2)).mean(), median))
+            line = "%-22s %8d %9.1f%% %7.1f%% %9.1f%% %14s" % (
+                name, sel.sum(), 100 * valid[sel].mean(), 100 * (lxy_cp[sel] >= 0).mean(),
+                100 * (same_sign[sel] & (dr[sel] < 0.2)).mean(), median)
+            if same_gen is not None:
+                line += " %9.1f%% %11.1f%%" % (100 * same_gen[sel].mean(),
+                                               100 * (same_gen[sel] & ~same_sign[sel]).mean())
+            print(line)
     if valid.any():
         q = np.percentile(lxy[valid], [10, 50, 90, 99])
         print("\nlxyBS of valid fits [cm]: 10%%=%.3g 50%%=%.3g 90%%=%.3g 99%%=%.3g" % tuple(q))
@@ -168,7 +204,7 @@ def main(argv=None):
             if dropped:
                 print("ERROR: %d DiMuonVtx legs are the dropped copy of a duplicate muon" % dropped)
                 status = 1
-        summarize(ev)
+        summarize(ev, indices_ok=not bad)
         print()
     return status
 

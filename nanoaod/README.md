@@ -49,6 +49,12 @@ Branches:
 kept. It fails if a dropped copy appears in any pair. Its "dup-like" column
 (same-sign, ΔR < 0.2) should be near zero for Muon–Displaced pairs.
 
+In simulation the definitive check is the "same-gen" column: the fraction of
+pairs whose two muons match the same generated muon, i.e. one muon
+reconstructed twice, whatever the charges. "same-gen OS" is the opposite-sign
+part of those, for example a copy whose charge was measured wrongly, which the
+same-charge rule doesn't catch.
+
 Run 3 only: Run 2 UL MiniAOD has no displaced-muon collection.
 
 ## Layout
