@@ -89,6 +89,10 @@ def global_tag(processed):
     return match.group("gt")[len(prefix) + 1 if prefix else 0:]
 
 
+class UnsupportedVersion(ValueError):
+    """A known era, but no NANO recipe for this MiniAOD version (e.g. UL MiniAODv1)."""
+
+
 def describe(dataset, catalog, eras, conditions=None):
     """Everything needed to build the NANO config for one MiniAOD dataset."""
     primary, processed, tier = split_dataset(dataset)
@@ -104,7 +108,7 @@ def describe(dataset, catalog, eras, conditions=None):
     version = format_version(processed)
     era_cfg = eras["eras"][era]
     if version not in era_cfg["cmsdriver_era"]:
-        raise ValueError("%s: era %s has no cmsDriver era for MiniAODv%d (known: %s)"
+        raise UnsupportedVersion("%s: era %s has no cmsDriver era for MiniAODv%d (known: %s)"
                          % (dataset, era, version, sorted(era_cfg["cmsdriver_era"])))
     return {
         "dataset": dataset,
@@ -245,10 +249,13 @@ def main(argv=None):
 
     # strip(): names pasted or cut from files can carry a trailing \r or spaces
     pairs = read_lists(args.lists) if args.lists else [(d.strip(), None) for d in args.dataset]
-    entries, skipped, errors = [], 0, []
+    entries, skipped, errors, unsupported = [], 0, [], []
     for dataset, process in pairs:
         try:
             info = describe(dataset, catalog, eras, args.conditions)
+        except UnsupportedVersion:
+            unsupported.append(dataset)
+            continue
         except ValueError as exc:
             errors.append(str(exc))
             continue
@@ -291,6 +298,11 @@ def main(argv=None):
 
     print("%d datasets -> %d configs (%d datasets with the event filter); %d skipped (other release)"
           % (len(entries), len(commands), sum(info["event_filter"] for info in entries), skipped))
+    if unsupported:
+        print("%d datasets skipped: no NANO recipe for their MiniAOD version (nanoaod/eras.yaml):"
+              % len(unsupported))
+        for dataset in unsupported:
+            print("  " + dataset)
     for message in errors:
         print("error: " + message, file=sys.stderr)
     for cfg_path in failed:

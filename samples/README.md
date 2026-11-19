@@ -31,6 +31,13 @@ MINIAODSIM and NANOAODSIM. Exact DAS dataset names are resolved on lxplus/LPC by
 The *core* processes are the HAHM and H→XX signals plus QCD μ-enriched,
 non-prompt J/ψ, Drell–Yan and tt̄. The rest are *secondary* or *optional*.
 
+**Run 2 means UL only.** The custom NanoAOD runs on UL MiniAODv2, and UL has
+little LLP→μμ signal (checked 2026-11-19): no HAHM or RPV samples, 4 H→XX
+points in 2016 and 6 B→Kφ samples in 2018. The Run 2 signal benchmarks exist
+in pre-UL campaigns (`RunIIAutumn18`, `RunIISummer16`), which are not used:
+they would need CMSSW_10_6, and their older reconstruction would differ from
+the UL backgrounds.
+
 The Run 3 signal and control patterns come from a `--discover` run on
 2026-11-16. Run 3 signal names changed in 2024, when parameters moved behind
 `_Par-`, so most signals have two patterns. All of them require `13p6TeV`,

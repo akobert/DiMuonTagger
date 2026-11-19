@@ -102,7 +102,8 @@ collection (`slimmedDisplacedMuons` exists from Run 3).
 - Muons reconstructed only in the muon system are refitted with a beam-spot
   constraint, so Run 2 covers decays far outside the tracker poorly. Full Run 2
   coverage would need AODSIM, which has the `displacedStandAloneMuons` tracks.
-- Run 2 runs in CMSSW_13_0_X, from UL MiniAODv2 only, with the
+- Run 2 runs in CMSSW_13_0_X, from UL MiniAODv2 only (`make_cfg.py` lists
+  datasets of other MiniAOD versions as skipped), with the
   `run2_nanoAOD_106Xv2` modifier and the release's own Run 2 MC conditions
   (`auto:...`), as the 13_0 NANO relval steps for UL inputs do. The 106X
   global tags in the dataset names were made for CMSSW_10_6.

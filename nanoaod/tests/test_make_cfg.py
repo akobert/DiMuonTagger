@@ -288,6 +288,19 @@ class TestRun2(unittest.TestCase):
                 name = make_cfg.customise_for({"displaced_muons": displaced, "event_filter": filtered})
                 self.assertIn("def %s(process):" % name.split(".")[-1], source)
 
+    def test_unsupported_version_is_skipped_not_an_error(self):
+        v1 = ("/HTo2LongLivedTo4mu_MH-125_MFF-50_CTau-1000mm_TuneCP5_13TeV-pythia8/"
+              "RunIISummer20UL16MiniAODAPV-106X_mcRun2_asymptotic_preVFP_v8-v1/MINIAODSIM")
+        with self.assertRaises(make_cfg.UnsupportedVersion):
+            make_cfg.describe(v1, self.catalog, self.eras)
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(out):
+            code = make_cfg.main(["--dataset", v1, RUN2_QCD, "--out-dir", tmp, "--dry-run", "--any-release"])
+        self.assertEqual(code, 0)   # not an error: the other datasets go ahead
+        self.assertIn("1 datasets skipped: no NANO recipe for their MiniAOD version", out.getvalue())
+        self.assertIn(v1, out.getvalue())
+        self.assertIn("1 datasets -> 1 configs", out.getvalue())
+
     def test_dataset_mode_uses_run2_patterns(self):
         out = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(out):

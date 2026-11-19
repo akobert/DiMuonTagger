@@ -100,6 +100,14 @@ processes:
   # Signal = a mu+mu- pair from a common displaced vertex of a long-lived
   # particle. Per-candidate labels come from truth matching both muons to the
   # same LLP; unmatched pairs in signal MC are background-like.
+  #
+  # Run 2 signal comes from UL campaigns only: the custom NanoAOD runs on UL
+  # MiniAODv2. UL has little LLP -> mu mu signal (checked 2026-11-19): no
+  # HAHM (HTo2Zd*) or RPV squark samples, 4 H -> XX points in 2016 (2016preVFP
+  # only as MiniAODv1, which has no NANO recipe) and 6 B -> K phi in 2018.
+  # The Run 2 benchmarks are in pre-UL campaigns (RunIIAutumn18,
+  # RunIISummer16), which are not used. The Run 2 patterns below are still the
+  # broad guesses; narrow them with `--discover --run run2`.
 
   hahm_zd:
     role: signal
