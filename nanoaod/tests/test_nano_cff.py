@@ -174,6 +174,25 @@ class TestCustomiseFiltered(unittest.TestCase):
         self.assertEqual(process.schedule[:2], [getattr(process, self.nano.FILTER_PATH), gen_path])
         self.assertIs(process.schedule[-1], process.NANOAODSIMoutput_step)
 
+    def test_run2_variants(self):
+        cff = sys.modules["DiMuonTagger.NanoProd.dimuonVertex_cff"]
+        for name, filtered in (("customiseDiMuonNanoRun2", False), ("customiseDiMuonNanoRun2Filtered", True)):
+            process = cmssw_stub.FakeProcess(self.cms)
+            self.assertIs(getattr(self.nano, name)(process), process)
+            selector = process.selectedDisplacedMuonsForNano
+            self.assertEqual(selector.src.value, "slimmedMuons")   # exists in Run 2 MiniAOD
+            self.assertEqual(selector.cut.value, "pt < 0")          # nothing passes: empty tables
+            # the tables and the producer still read the (empty) selector
+            self.assertEqual(process.displacedMuonTable.src.value, "selectedDisplacedMuonsForNano")
+            self.assertEqual(process.diMuonVertices.displacedMuons.value, "selectedDisplacedMuonsForNano")
+            self.assertIn(process.dimuonTablesTask, process.nanoTableTaskCommon.items)
+            self.assertEqual(hasattr(process, "diMuonVertexFilter"), filtered, name)
+        # the shared cff is untouched (Run 3 configs still read slimmedDisplacedMuons)
+        self.assertEqual(cff.selectedDisplacedMuonsForNano.src.value, "slimmedDisplacedMuons")
+        process = cmssw_stub.FakeProcess(self.cms)
+        self.nano.customiseDiMuonNanoFiltered(process)
+        self.assertEqual(process.selectedDisplacedMuonsForNano.src.value, "slimmedDisplacedMuons")
+
     def test_data_has_no_gen_weights_path(self):
         process = cmssw_stub.FakeProcess(self.cms, mc=False)
         self.nano.customiseDiMuonNanoFiltered(process)

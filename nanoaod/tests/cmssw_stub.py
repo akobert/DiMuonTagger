@@ -6,6 +6,7 @@ outside CMSSW and inspect what they configure. Mirrors the CMSSW_13_0_X
 definitions of Var, P3Vars/P4Vars and the muon gen-match modules.
 """
 import builtins
+import copy
 import importlib.util
 import os
 import sys
@@ -202,6 +203,8 @@ class FakeProcess(object):
         module = sys.modules.get(name)
         if module is None:  # e.g. TransientTrackBuilder_cfi: just record it
             return
-        for key, value in vars(module).items():
-            if isinstance(value, (_Module, Task)):
-                setattr(self, key, value)
+        # One deepcopy for all: a customise that edits a module must not change
+        # the shared cff module for later tests; tasks keep pointing at the copies.
+        objects = copy.deepcopy({k: v for k, v in vars(module).items() if isinstance(v, (_Module, Task))})
+        for key, value in objects.items():
+            setattr(self, key, value)

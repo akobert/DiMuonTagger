@@ -2,7 +2,8 @@
 
 Standard NanoAOD has no dimuon vertex fit and no displaced standalone (DSA)
 muons, and coffea cannot read MiniAOD. This directory adds a CMSSW package that
-runs on Run 3 MiniAOD and writes standard NanoAOD plus these additions:
+runs on Run 3 and Run 2 UL MiniAOD and writes standard NanoAOD plus these
+additions:
 
 | Collection | What it adds |
 |---|---|
@@ -93,7 +94,18 @@ unmatched, and two copies there never share a generated muon.
 `check_nano.py` also reports the fraction of `Muon`s that are copies, and fails
 if a dropped copy appears in any pair.
 
-Run 3 only: Run 2 UL MiniAOD has no displaced-muon collection.
+**Run 2 UL: standard muons only.** Run 2 UL MiniAOD has no displaced-muon
+collection (`slimmedDisplacedMuons` exists from Run 3).
+- Run 2 configs use `customiseDiMuonNanoRun2[Filtered]`, which writes the
+  `DisplacedMuon` tables with zero rows. The branches are the same in every
+  era, and Run 2 `DiMuonVtx` rows are Muon–Muon pairs only.
+- Muons reconstructed only in the muon system are refitted with a beam-spot
+  constraint, so Run 2 covers decays far outside the tracker poorly. Full Run 2
+  coverage would need AODSIM, which has the `displacedStandAloneMuons` tracks.
+- Run 2 runs in CMSSW_13_0_X, from UL MiniAODv2 only, with the
+  `run2_nanoAOD_106Xv2` modifier and the release's own Run 2 MC conditions
+  (`auto:...`), as the 13_0 NANO relval steps for UL inputs do. The 106X
+  global tags in the dataset names were made for CMSSW_10_6.
 
 ## Layout
 
@@ -103,7 +115,7 @@ nanoaod/
     plugins/DiMuonVertexProducer.cc      pairs muons, Kalman fit, two-track DCA -> pat::CompositeCandidate
     plugins/DiMuonTableProducers.cc      flat-table producers for DiMuonVtx and DisplacedMuon
     python/dimuonVertex_cff.py           modules and tasks
-    python/dimuonNano_cff.py             customiseDiMuonNano (cmsDriver --customise)
+    python/dimuonNano_cff.py             customiseDiMuonNano[Run2][Filtered] (cmsDriver --customise)
     test/check_nano.py                   branch / index / summary check of an output file
   eras.yaml                              era -> release and cmsDriver --era per MiniAOD version
   make_cfg.py                            cmsDriver config generation + cfg/index.json
@@ -115,11 +127,15 @@ nanoaod/
 
 | Era | Release | `--era` (by input MiniAOD) |
 |---|---|---|
+| 2016preVFP | CMSSW_13_0_X | UL v2: `Run2_2016_HIPM,run2_nanoAOD_106Xv2`; conditions `auto:run2_mc_pre_vfp` |
+| 2016postVFP | CMSSW_13_0_X | UL v2: `Run2_2016,run2_nanoAOD_106Xv2`; conditions `auto:run2_mc` |
+| 2017 | CMSSW_13_0_X | UL v2: `Run2_2017,run2_nanoAOD_106Xv2`; conditions `auto:phase1_2017_realistic` |
+| 2018 | CMSSW_13_0_X | UL v2: `Run2_2018,run2_nanoAOD_106Xv2`; conditions `auto:phase1_2018_realistic` |
 | 2022preEE, 2022postEE | CMSSW_13_0_X | v3 (124X): `Run3,run3_nanoAOD_124`; v4 (130X): `Run3` |
 | 2023preBPix, 2023postBPix | CMSSW_13_0_X | v4: `Run3_2023` |
 | 2024 | CMSSW_15_0_X | v6: `Run3_2024` |
 
-The global tag comes from the MiniAOD processed name, e.g.
+For Run 3 the global tag comes from the MiniAOD processed name, e.g.
 `130X_mcRun3_2022_realistic_postEE_v6`. A special-production prefix before it
 (`FixLLSleptonSim_`, `KeepRAW_`, …) is not part of the global tag and is
 dropped. Override the global tag with `make_cfg.py --conditions`.
@@ -136,7 +152,7 @@ first, for either release:
 cmssw-el8
 ```
 ```bash
-bash nanoaod/setup.sh 2022_23 ~/work
+bash nanoaod/setup.sh 2022_23 ~/work     # CMSSW_13_0: Run 2 UL, 2022 and 2023
 ```
 ```bash
 bash nanoaod/setup.sh 2024 ~/work

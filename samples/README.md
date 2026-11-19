@@ -67,7 +67,9 @@ voms-proxy-init -voms cms -rfc -valid 192:00
    ```
 
    Edit the `patterns` in `catalog.yaml` to match what you find, then change
-   `status` to `standard`.
+   `status` to `standard`. Only UL campaigns (`RunIISummer20UL*`) are searched
+   for Run 2: the custom NanoAOD runs on UL MiniAODv2 only, so signal that
+   exists only in pre-UL campaigns (`RunIIAutumn18*`, …) can't be used.
 
 2. **Resolve the catalog.**
 
@@ -138,9 +140,9 @@ CRAB tasks.
   impact parameters but no dimuon vertex fit. Muons from decays far outside the
   tracker are reconstructed as displaced standalone (DSA) muons. Run 3
   MiniAOD adds a displaced-muon collection (`slimmedDisplacedMuons`); Run 2 UL
-  MiniAOD has no equivalent. Check this for your CMSSW release. A Run 2 tagger
-  that covers large displacement may need AODSIM (`--tier AODSIM`) or a custom
-  ntuple.
+  MiniAOD has no equivalent, so the Run 2 custom NanoAOD has Muon–Muon pairs
+  only (see `nanoaod/README.md`). A Run 2 tagger that covers large
+  displacement would need AODSIM (`--tier AODSIM`) or a custom ntuple.
 - **Cross sections** are not in DAS. Get them from XSDB or GenXSecAnalyzer when
   the backgrounds need to be mixed with physical weights.
 - **Signal coverage across eras** is uneven. EXO-23-014 signal was produced

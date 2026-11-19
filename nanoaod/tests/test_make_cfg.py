@@ -29,7 +29,14 @@ DATASETS = {
         ("2023postBPix", 4, "Run3_2023", "130X_mcRun3_2023_realistic_postBPix_v2", "13_0"),
     "/QCD_PT-15to20_MuEnrichedPt5_TuneCP5_13p6TeV_pythia8/RunIII2024Summer24MiniAODv6-150X_mcRun3_2024_realistic_v2-v2/MINIAODSIM":
         ("2024", 6, "Run3_2024", "150X_mcRun3_2024_realistic_v2", "15_0"),
+    # Run 2 UL: the release's own conditions instead of the 106X GT in the name
+    "/QCD_Pt-15To20_MuEnrichedPt5_TuneCP5_13TeV-pythia8/RunIISummer20UL18MiniAODv2-106X_upgrade2018_realistic_v16_L1v1-v2/MINIAODSIM":
+        ("2018", 2, "Run2_2018,run2_nanoAOD_106Xv2", "auto:phase1_2018_realistic", "13_0"),
+    "/TTTo2L2Nu_TuneCP5_13TeV-powheg-pythia8/RunIISummer20UL16MiniAODAPVv2-106X_mcRun2_asymptotic_preVFP_v11-v1/MINIAODSIM":
+        ("2016preVFP", 2, "Run2_2016_HIPM,run2_nanoAOD_106Xv2", "auto:run2_mc_pre_vfp", "13_0"),
 }
+RUN2_QCD = next(d for d in DATASETS if "RunIISummer20UL18" in d)
+RUN2_TT = next(d for d in DATASETS if "RunIISummer20UL16" in d)
 
 
 class TestDescribe(unittest.TestCase):
@@ -52,8 +59,10 @@ class TestDescribe(unittest.TestCase):
 
     def test_rejects_unsupported_inputs(self):
         bad = [
-            # Run 2 UL: no Run 3 era
-            "/QCD_Pt-15To20_MuEnrichedPt5_TuneCP5_13TeV-pythia8/RunIISummer20UL18MiniAODv2-106X_upgrade2018_realistic_v16_L1v1-v2/MINIAODSIM",
+            # Run 2 UL MiniAOD v1: only v2 has a NANO recipe in 13_0
+            "/QCD_Pt-15To20_MuEnrichedPt5_TuneCP5_13TeV-pythia8/RunIISummer20UL18MiniAOD-106X_upgrade2018_realistic_v11_L1v1-v2/MINIAODSIM",
+            # pre-UL Run 2: no era
+            "/QCD_Pt-15to20_MuEnrichedPt5_TuneCP5_13TeV_pythia8/RunIIAutumn18MiniAOD-102X_upgrade2018_realistic_v15-v1/MINIAODSIM",
             # 2023 has no MiniAODv3 entry
             "/X/Run3Summer23MiniAODv3-124X_mcRun3_2023_realistic_v1-v1/MINIAODSIM",
             # wrong tier
@@ -150,7 +159,8 @@ class TestMainDryRun(unittest.TestCase):
                     make_cfg.main(["--dataset", *DATASETS, "--out-dir", tmp, "--dry-run"])
             finally:
                 del os.environ["CMSSW_VERSION"]
-            self.assertIn("1 datasets -> 1 configs (1 datasets with the event filter); 5 skipped", out.getvalue())
+            self.assertIn("1 datasets -> 1 configs (1 datasets with the event filter); %d skipped"
+                          % (len(DATASETS) - 1), out.getvalue())
 
 
 SIGNAL_2022 = ("/HTo2ZdTo2mu2x_MZd-20_Epsilon-5e-08_TuneCP5_13p6TeV_madgraph-pythia8/"
@@ -227,6 +237,65 @@ class TestEventFilter(unittest.TestCase):
                     handle.write(dataset + "\n")
             out = self._dry_run("--lists", os.path.join(tmp, "lists"))
         self.assertIn("2 datasets -> 2 configs (1 datasets with the event filter)", out)
+
+
+class TestRun2(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.catalog = make_cfg.load_catalog(make_cfg.DEFAULT_CATALOG)
+        cls.eras = make_cfg.load_eras(make_cfg.DEFAULT_ERAS)
+
+    def test_describe(self):
+        info = make_cfg.describe(RUN2_QCD, self.catalog, self.eras)
+        self.assertEqual(info["run"], "run2")
+        self.assertFalse(info["displaced_muons"])
+        self.assertEqual(make_cfg.describe(QCD_2022, self.catalog, self.eras)["run"], "run3")
+        self.assertTrue(make_cfg.describe(QCD_2022, self.catalog, self.eras)["displaced_muons"])
+        # --conditions still wins over the era's conditions
+        self.assertEqual(make_cfg.describe(RUN2_QCD, self.catalog, self.eras, conditions="MY_GT")["global_tag"],
+                         "MY_GT")
+
+    def test_every_run2_era_has_a_recipe(self):
+        run2_eras = set(self.catalog["runs"]["run2"]["eras"])
+        self.assertEqual(run2_eras, {"2016preVFP", "2016postVFP", "2017", "2018"})
+        for era in run2_eras:
+            cfg = self.eras["eras"][era]
+            self.assertEqual(cfg["release"], "13_0", era)
+            self.assertEqual(list(cfg["cmsdriver_era"]), [2], era)
+            self.assertIn("run2_nanoAOD_106Xv2", cfg["cmsdriver_era"][2], era)
+            self.assertTrue(cfg["conditions"].startswith("auto:"), era)
+            self.assertFalse(cfg["displaced_muons"], era)
+
+    def test_customise_and_config_name(self):
+        info = make_cfg.describe(RUN2_QCD, self.catalog, self.eras)
+        self.assertEqual(make_cfg.customise_for(info), make_cfg.CUSTOMISE_FILE + ".customiseDiMuonNanoRun2")
+        info["event_filter"] = True
+        self.assertEqual(make_cfg.customise_for(info),
+                         make_cfg.CUSTOMISE_FILE + ".customiseDiMuonNanoRun2Filtered")
+        name = make_cfg.config_name(info)
+        self.assertEqual(name, "nano_2018_MiniAODv2_auto_phase1_2018_realistic_filtered_cfg.py")
+        cmd = make_cfg.cmsdriver_command(info, "/tmp/" + name, "file:input.root", -1)
+        joined = " ".join(cmd)
+        self.assertIn("--conditions auto:phase1_2018_realistic", joined)
+        self.assertIn("--era Run2_2018,run2_nanoAOD_106Xv2", joined)
+        self.assertIn("customiseDiMuonNanoRun2Filtered", joined)
+
+    def test_customise_functions_exist(self):
+        with open(os.path.join(NANOAOD, "DiMuonTagger", "NanoProd", "python", "dimuonNano_cff.py")) as handle:
+            source = handle.read()
+        for displaced in (True, False):
+            for filtered in (True, False):
+                name = make_cfg.customise_for({"displaced_muons": displaced, "event_filter": filtered})
+                self.assertIn("def %s(process):" % name.split(".")[-1], source)
+
+    def test_dataset_mode_uses_run2_patterns(self):
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(out):
+            code = make_cfg.main(["--dataset", RUN2_QCD, RUN2_TT, "--out-dir", tmp, "--dry-run", "--any-release"])
+        self.assertEqual(code, 0)
+        text = out.getvalue()
+        self.assertIn("customiseDiMuonNanoRun2Filtered", text)   # QCD: background
+        self.assertIn("2 datasets -> 2 configs (2 datasets with the event filter)", text)  # TTTo2L2Nu: ttbar
 
 
 class TestSubmit(unittest.TestCase):

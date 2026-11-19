@@ -3,10 +3,14 @@
 
 Run inside a CMSSW area made by nanoaod/setup.sh, after `cmsenv`.
 
-Each MiniAOD dataset gets mapped as follows:
-- its era, from the samples/catalog.yaml regexes;
-- its MiniAOD format version and global tag, from the processed name;
+Each MiniAOD dataset (Run 2 UL or Run 3) gets mapped as follows:
+- its run and era, from the samples/catalog.yaml regexes;
+- its MiniAOD format version and global tag, from the processed name (Run 2:
+  the release's own conditions, from nanoaod/eras.yaml);
 - a cmsDriver --era, from nanoaod/eras.yaml.
+
+Run 2 UL MiniAOD has no displaced muons: its configs write an empty
+DisplacedMuon table (eras.yaml `displaced_muons: false`).
 
 One config is generated per distinct (era, MiniAOD version, global tag, event
 filter). Background datasets get the event filter: only events with at least
@@ -47,9 +51,9 @@ from resolve_samples import (UNCLASSIFIED, classify_era, format_version, load_ca
 DEFAULT_CATALOG = os.path.join(REPO, "samples", "catalog.yaml")
 DEFAULT_ERAS = os.path.join(HERE, "eras.yaml")
 DEFAULT_OUT = os.path.join(HERE, "cfg")
-CUSTOMISE = "DiMuonTagger/NanoProd/dimuonNano_cff.customiseDiMuonNano"
-CUSTOMISE_FILTERED = "DiMuonTagger/NanoProd/dimuonNano_cff.customiseDiMuonNanoFiltered"
-RUN = "run3"
+CUSTOMISE_FILE = "DiMuonTagger/NanoProd/dimuonNano_cff"
+CUSTOMISE = CUSTOMISE_FILE + ".customiseDiMuonNano"
+CUSTOMISE_FILTERED = CUSTOMISE_FILE + ".customiseDiMuonNanoFiltered"
 TIER = "MINIAODSIM"
 
 _GT_RE = re.compile(r"^[^-]+-(?P<gt>.+?)(?:_ext\d+)?-v\d+$")
@@ -58,7 +62,8 @@ _GT_RE = re.compile(r"^[^-]+-(?P<gt>.+?)(?:_ext\d+)?-v\d+$")
 def load_eras(path):
     with open(path) as handle:
         cfg = yaml.safe_load(handle)
-    cfg["eras"] = {str(era): {**info, "cmsdriver_era": {int(v): e for v, e in info["cmsdriver_era"].items()}}
+    cfg["eras"] = {str(era): {**info, "cmsdriver_era": {int(v): e for v, e in info["cmsdriver_era"].items()},
+                              "displaced_muons": bool(info.get("displaced_muons", True))}
                    for era, info in cfg["eras"].items()}
     cfg["releases"] = {str(k): v for k, v in cfg["releases"].items()}
     return cfg
@@ -89,9 +94,13 @@ def describe(dataset, catalog, eras, conditions=None):
     primary, processed, tier = split_dataset(dataset)
     if tier != TIER:
         raise ValueError("%s is %s, expected %s" % (dataset, tier, TIER))
-    era = classify_era(catalog, RUN, TIER, processed)
+    run, era = None, UNCLASSIFIED
+    for run in catalog["runs"]:
+        era = classify_era(catalog, run, TIER, processed)
+        if era != UNCLASSIFIED:
+            break
     if era == UNCLASSIFIED or era not in eras["eras"]:
-        raise ValueError("%s: no Run 3 era matches %r" % (dataset, processed))
+        raise ValueError("%s: no era in nanoaod/eras.yaml matches %r" % (dataset, processed))
     version = format_version(processed)
     era_cfg = eras["eras"][era]
     if version not in era_cfg["cmsdriver_era"]:
@@ -100,20 +109,33 @@ def describe(dataset, catalog, eras, conditions=None):
     return {
         "dataset": dataset,
         "primary": primary,
+        "run": run,
         "era": era,
         "release": era_cfg["release"],
         "miniaod_version": version,
-        "global_tag": conditions or global_tag(processed),
+        "global_tag": conditions or era_cfg.get("conditions") or global_tag(processed),
         "cmsdriver_era": era_cfg["cmsdriver_era"][version],
+        "displaced_muons": era_cfg["displaced_muons"],
     }
 
 
-def catalog_process(primary, catalog):
-    """Catalog process whose Run 3 patterns match a primary dataset name, or None."""
+def catalog_process(primary, catalog, run="run3"):
+    """Catalog process whose `run` patterns match a primary dataset name, or None."""
     for name, proc in sorted(catalog["processes"].items()):
-        if any(fnmatch.fnmatchcase(primary, pattern) for pattern in proc["patterns"].get(RUN) or []):
+        if any(fnmatch.fnmatchcase(primary, pattern) for pattern in proc["patterns"].get(run) or []):
             return name
     return None
+
+
+def customise_for(info):
+    """cmsDriver --customise for a dataset: Run 2 variant without displaced
+    muons, and/or the event-filtered variant."""
+    name = "customiseDiMuonNano"
+    if not info.get("displaced_muons", True):
+        name += "Run2"
+    if info.get("event_filter"):
+        name += "Filtered"
+    return "%s.%s" % (CUSTOMISE_FILE, name)
 
 
 def event_filter_for(process, catalog, mode="auto"):
@@ -139,7 +161,9 @@ def config_name(info, test_inputs=None):
     identifies the sample and input, so tests of different samples in the
     same era never share (and silently reuse) a config.
     """
-    base = "nano_%s_MiniAODv%d_%s" % (info["era"], info["miniaod_version"], info["global_tag"])
+    # Run 2 conditions are autoCond keys ("auto:run2_mc"): no ':' in file names
+    gt = re.sub(r"[^A-Za-z0-9_.-]", "_", info["global_tag"])
+    base = "nano_%s_MiniAODv%d_%s" % (info["era"], info["miniaod_version"], gt)
     if info.get("event_filter"):
         base += "_filtered"
     if test_inputs is None:
@@ -162,7 +186,7 @@ def cmsdriver_command(info, cfg_path, filein, nevents):
         "--datatier", "NANOAODSIM",
         "--era", info["cmsdriver_era"],
         "--conditions", info["global_tag"],
-        "--customise", CUSTOMISE_FILTERED if info.get("event_filter") else CUSTOMISE,
+        "--customise", customise_for(info),
         "-n", str(nevents),
         "--no_exec",
     ]
@@ -231,7 +255,7 @@ def main(argv=None):
         if not args.any_release and info["release"] != current:
             skipped += 1
             continue
-        info["process"] = process or catalog_process(info["primary"], catalog)
+        info["process"] = process or catalog_process(info["primary"], catalog, info["run"])
         info["event_filter"] = event_filter_for(info["process"], catalog, args.event_filter)
         info["cfg"] = os.path.join(args.out_dir, config_name(info, (filein, args.nevents) if test else None))
         entries.append(info)

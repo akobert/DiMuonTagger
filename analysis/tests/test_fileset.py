@@ -14,11 +14,13 @@ QCD_PARENT = "/QCD_PT-50to80_MuEnrichedPt5_TuneCP5_13p6TeV_pythia8/" \
 ODD = "/SomethingElse_13p6TeV/jdoe-DiMuonNano_v1-00ff/USER"        # no process, no era anywhere
 EMPTY = "/TTto2L2Nu_TuneCP5_13p6TeV_powheg-pythia8/jdoe-DiMuonNano_v1_2024-00aa/USER"
 OTHER_TAG = "/DYto2Mu_MLL-50to120_TuneCP5_13p6TeV_powheg-pythia8/jdoe-DiMuonNano_v12_2024-11aa/USER"
+RUN2 = "/QCD_Pt-50To80_MuEnrichedPt5_TuneCP5_13TeV-pythia8/jdoe-DiMuonNano_v1_2016preVFP-22bb/USER"
 
 
 def fake_das(calls):
     answers = {
-        "dataset=/*/jdoe-DiMuonNano_v1*/USER instance=prod/phys03": [HAHM, QCD, ODD, EMPTY, OTHER_TAG],
+        "dataset=/*/jdoe-DiMuonNano_v1*/USER instance=prod/phys03": [HAHM, QCD, ODD, EMPTY, OTHER_TAG, RUN2],
+        "file dataset=%s instance=prod/phys03" % RUN2: ["/store/user/jdoe/DiMuonNano/v1/d/out_1.root"],
         "file dataset=%s instance=prod/phys03" % HAHM: ["/store/user/jdoe/DiMuonNano/v1/a/out_2.root",
                                                         "/store/user/jdoe/DiMuonNano/v1/a/out_1.root"],
         "file dataset=%s instance=prod/phys03" % QCD: ["/store/user/jdoe/DiMuonNano/v1/b/out_1.root"],
@@ -39,6 +41,7 @@ def test_build_fileset(tmp_path):
     fileset, problems = fs.build_fileset(TAG, "jdoe", fs.load_catalog(), fake_das(calls), log=lambda msg: None)
     assert sorted(fileset) == [
         "hahm_zd/2022postEE/HTo2ZdTo2mu2x_MZd-20_ctau-100mm_TuneCP5_13p6TeV_madgraph-pythia8",
+        "qcd_muenriched/2016preVFP/QCD_Pt-50To80_MuEnrichedPt5_TuneCP5_13TeV-pythia8",   # Run 2 UL
         "qcd_muenriched/2023postBPix/QCD_PT-50to80_MuEnrichedPt5_TuneCP5_13p6TeV_pythia8",
         "unknown/unknown/SomethingElse_13p6TeV",
     ]
@@ -84,3 +87,7 @@ def test_helpers():
     assert fs.match_processes("QCD_PT-15to20_MuEnrichedPt5_TuneCP5_13p6TeV_pythia8", cat) == ["qcd_muenriched"]
     assert fs.match_processes("NotInCatalog", cat) == []
     assert fs.era_from_parent("Run3Summer22EEMiniAODv4-130X_mcRun3_2022_realistic_postEE_v6-v2", cat) == "2022postEE"
+    assert fs.era_from_parent("RunIISummer20UL17MiniAODv2-106X_mc2017_realistic_v9-v2", cat) == "2017"
+    assert fs.match_processes("QCD_Pt-15To20_MuEnrichedPt5_TuneCP5_13TeV-pythia8", cat) == ["qcd_muenriched"]
+    assert fs.match_processes("QCD_Pt-15To20_MuEnrichedPt5_TuneCP5_13TeV-pythia8", cat, run="run3") == []
+    assert {"2016preVFP", "2018", "2022preEE", "2024"} <= fs.all_eras(cat)

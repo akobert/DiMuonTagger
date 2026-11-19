@@ -4,8 +4,12 @@ Use with:
     cmsDriver.py ... --step NANO \
         --customise DiMuonTagger/NanoProd/dimuonNano_cff.customiseDiMuonNano
 
-customiseDiMuonNanoFiltered does the same and also writes only events with at
-least one DiMuonVtx candidate (used for backgrounds; see make_cfg.py).
+Variants (make_cfg.py picks one per dataset):
+- customiseDiMuonNanoFiltered: writes only events with at least one DiMuonVtx
+  candidate (backgrounds).
+- customiseDiMuonNanoRun2[Filtered]: for inputs without slimmedDisplacedMuons
+  (Run 2 UL MiniAOD). DisplacedMuon is written with zero rows, so the output
+  has the same branches in every era, and DiMuonVtx has Muon-Muon pairs only.
 
 One function for data and MC: MC-only modules go into nanoTableTaskFS, which is
 scheduled only for MC. Works in CMSSW_13_0_X and CMSSW_15_0_X.
@@ -34,13 +38,34 @@ def customiseDiMuonNano(process):
 
 
 def customiseDiMuonNanoFiltered(process):
-    """customiseDiMuonNano, writing only events with >= 1 DiMuonVtx candidate.
+    """customiseDiMuonNano, writing only events with >= 1 DiMuonVtx candidate."""
+    return _add_event_filter(customiseDiMuonNano(process))
+
+
+def customiseDiMuonNanoRun2(process):
+    """customiseDiMuonNano for MiniAOD without slimmedDisplacedMuons (Run 2 UL).
+
+    The displaced-muon selector reads slimmedMuons with a cut nothing passes,
+    so every DisplacedMuon table and the producer's displaced input are empty.
+    """
+    process = customiseDiMuonNano(process)
+    process.selectedDisplacedMuonsForNano.src = cms.InputTag("slimmedMuons")
+    process.selectedDisplacedMuonsForNano.cut = cms.string("pt < 0")
+    return process
+
+
+def customiseDiMuonNanoRun2Filtered(process):
+    """customiseDiMuonNanoRun2, writing only events with >= 1 DiMuonVtx candidate."""
+    return _add_event_filter(customiseDiMuonNanoRun2(process))
+
+
+def _add_event_filter(process):
+    """Write only events with >= 1 DiMuonVtx candidate.
 
     Events without a candidate carry nothing for the tagger. The Runs tree
     still counts every processed event (genEventCount, genEventSumw, ...), so
     normalise with it rather than with the events in the file.
     """
-    process = customiseDiMuonNano(process)
     process.diMuonVertexFilter = cms.EDFilter(
         "CandViewCountFilter", src=cms.InputTag("diMuonVertices"), minNumber=cms.uint32(1))
     setattr(process, FILTER_PATH, cms.Path(process.diMuonVertexFilter))
@@ -53,7 +78,7 @@ def customiseDiMuonNanoFiltered(process):
         setattr(process, GEN_WEIGHTS_PATH, cms.Path(process.genWeightsTable))
         paths.append(getattr(process, GEN_WEIGHTS_PATH))
     else:
-        print("customiseDiMuonNanoFiltered: no genWeightsTable (data?); Runs counters are not scheduled")
+        print("DiMuonTagger event filter: no genWeightsTable (data?); Runs counters are not scheduled")
 
     schedule = getattr(process, "schedule", None)
     if schedule is not None:

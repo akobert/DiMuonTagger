@@ -1,9 +1,11 @@
 """NanoEvents schema for the DiMuonTagger custom NanoAOD.
 
-Standard Run 3 NanoAOD plus (see nanoaod/DiMuonTagger/NanoProd/test/check_nano.py):
+Standard NanoAOD plus (see nanoaod/DiMuonTagger/NanoProd/test/check_nano.py):
 
 - ``GenPart_vx/vy/vz``: production vertex (cm)
-- ``DisplacedMuon``: displaced standalone/global muons (slimmedDisplacedMuons)
+- ``DisplacedMuon``: displaced standalone/global muons (slimmedDisplacedMuons).
+  Always present but empty in Run 2 UL, whose MiniAOD has no displaced muons,
+  so Run 2 candidates are Muon-Muon pairs only.
 - ``DiMuonVtx``: one row per muon pair with a vertex fit. ``mu1Idx/mu2Idx`` are
   local indices into ``Muon`` (``muNType == 0``) or ``DisplacedMuon``
   (``muNType == 1``). They are not cross-referenced here, because the target

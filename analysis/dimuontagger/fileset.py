@@ -10,10 +10,11 @@ CRAB (nanoaod/crab/submit.py) publishes each task in DBS ``prod/phys03`` as::
 For each such dataset this module lists its files, prefixes the LFNs with a
 redirector (``root://xcache/`` on coffea-casa), and attaches metadata:
 
-- ``process`` and ``role``: the samples/catalog.yaml process whose run-3
-  patterns match the primary dataset name (fnmatch, case-sensitive)
+- ``process`` and ``role``: the samples/catalog.yaml process whose patterns
+  (Run 2 or Run 3) match the primary dataset name (fnmatch, case-sensitive)
 - ``era``: from the dataset name; if it is missing there, from the parent
   MiniAOD dataset, classified with the catalog's MINIAODSIM era regexes
+  (Run 2 UL and Run 3 eras)
 - ``das_dataset``, ``primary``, ``tag``, ``nfiles`` and, unless skipped,
   ``nevents``
 
@@ -37,7 +38,6 @@ DAS_INSTANCE = "prod/phys03"
 DEFAULT_REDIRECTOR = "root://xcache/"
 DEFAULT_CATALOG = os.path.join(REPO_DIR, "samples", "catalog.yaml")
 TREE = "Events"
-RUN = "run3"
 UNKNOWN = "unknown"
 
 
@@ -75,10 +75,17 @@ def load_catalog(path=DEFAULT_CATALOG):
     return cat
 
 
-def match_processes(primary, catalog, run=RUN):
-    """Catalog processes whose `run` patterns match the primary dataset name."""
+def match_processes(primary, catalog, run=None):
+    """Catalog processes whose patterns (of `run`, or of any run) match the primary dataset name."""
+    runs = [run] if run else list(catalog.get("runs", {}))
     return [name for name, proc in catalog.get("processes", {}).items()
-            if any(fnmatch.fnmatchcase(primary, pat) for pat in proc.get("patterns", {}).get(run, []))]
+            if any(fnmatch.fnmatchcase(primary, pat)
+                   for r in runs for pat in proc.get("patterns", {}).get(r) or [])]
+
+
+def all_eras(catalog):
+    """Era names of every run (Run 2 UL and Run 3)."""
+    return {era for rdef in catalog.get("runs", {}).values() for era in rdef.get("eras", {})}
 
 
 def era_from_name(processed, tag, eras):
@@ -89,11 +96,12 @@ def era_from_name(processed, tag, eras):
     return None
 
 
-def era_from_parent(parent_processed, catalog, run=RUN, tier="MINIAODSIM"):
-    for era, tiers in catalog["runs"][run]["eras"].items():
-        regex = tiers.get(tier)
-        if regex and re.search(regex, parent_processed):
-            return era
+def era_from_parent(parent_processed, catalog, tier="MINIAODSIM"):
+    for rdef in catalog["runs"].values():
+        for era, tiers in rdef["eras"].items():
+            regex = tiers.get(tier)
+            if regex and re.search(regex, parent_processed):
+                return era
     return None
 
 
@@ -142,7 +150,7 @@ def build_fileset(tag, user, catalog, query, redirector=DEFAULT_REDIRECTOR, summ
     (``dasgoclient_query`` on lxplus, a fake in the tests).
     """
     log = log or (lambda msg: print(msg, file=sys.stderr))
-    eras = set(catalog["runs"][RUN]["eras"])
+    eras = all_eras(catalog)
     datasets, other_tags = find_datasets(tag, user, query)
     problems = ["%s: different tag; skipped" % d for d in other_tags]
     if not datasets:

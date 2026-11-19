@@ -1,12 +1,20 @@
-# How to run the custom NANO step for each Run 3 era.
+# How to run the custom NANO step for each era (Run 2 UL and Run 3).
 #
-# Eras are named as in samples/catalog.yaml (runs.run3.eras), which also holds
+# Eras are named as in samples/catalog.yaml (runs.<run>.eras), which also holds
 # the regexes that assign a MiniAOD dataset to an era. The MiniAOD format
 # version (the N in MiniAODvN) and the global tag are read from the dataset's
-# processed name; the GT can be overridden with make_cfg.py --conditions.
+# processed name. `conditions`, if set, replaces that global tag; make_cfg.py
+# --conditions overrides both.
 #
 # `cmsdriver_era` is keyed by MiniAOD version. 124X MiniAODv3 inputs need the
 # run3_nanoAOD_124 modifier in 13_0 (13_0 relval step NANO_mc12.4).
+#
+# Run 2 UL MiniAODv2 runs in CMSSW_13_0 with the run2_nanoAOD_106Xv2 modifier
+# and the release's own Run 2 MC conditions, as the 13_0 relval steps
+# NANO_mc10.6ul16v2 / ul18v2 do: the 106X global tags in the dataset names were
+# made for CMSSW_10_6. UL MiniAOD has no slimmedDisplacedMuons, so
+# `displaced_muons: false` selects the customise that writes an empty
+# DisplacedMuon table (Muon-Muon pairs only).
 
 releases:
   "13_0":
@@ -17,6 +25,28 @@ releases:
     scram_arch: el8_amd64_gcc12   # production arch; el9 builds exist but are not production
 
 eras:
+  # ---------------------------------------------------------------- Run 2 UL
+  2016preVFP:
+    release: "13_0"
+    cmsdriver_era: {2: "Run2_2016_HIPM,run2_nanoAOD_106Xv2"}
+    conditions: "auto:run2_mc_pre_vfp"
+    displaced_muons: false
+  2016postVFP:
+    release: "13_0"
+    cmsdriver_era: {2: "Run2_2016,run2_nanoAOD_106Xv2"}
+    conditions: "auto:run2_mc"
+    displaced_muons: false
+  2017:
+    release: "13_0"
+    cmsdriver_era: {2: "Run2_2017,run2_nanoAOD_106Xv2"}
+    conditions: "auto:phase1_2017_realistic"
+    displaced_muons: false
+  2018:
+    release: "13_0"
+    cmsdriver_era: {2: "Run2_2018,run2_nanoAOD_106Xv2"}
+    conditions: "auto:phase1_2018_realistic"
+    displaced_muons: false
+  # ------------------------------------------------------------------- Run 3
   2022preEE:
     release: "13_0"
     cmsdriver_era: {3: "Run3,run3_nanoAOD_124", 4: "Run3"}
