@@ -129,7 +129,9 @@ Useful options: `--process`, `--role`, `--run run3`, `--tier AODSIM`,
 `--no-summary` (skip event counts) and `--no-sites` (skip the disk/tape check;
 each costs one DAS query per dataset, so both together are much faster),
 `--dry-run` (print the DAS queries), `--status PRODUCTION` (samples still being
-produced).
+produced), and `--trimmed`, which prints only the coverage table, the patterns
+that matched nothing and the special productions. With `--trimmed` the output
+files are written as usual and failed DAS queries are still reported, on stderr.
 
 Disk vs tape comes from DAS `site dataset=`. Sites ending in `_Tape`, `_MSS`,
 `_Buffer` or `_Export` count as not on disk. A disk site may hold only part of a

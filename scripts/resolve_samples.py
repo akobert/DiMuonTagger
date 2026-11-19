@@ -18,6 +18,10 @@ Typical use:
     python3 scripts/resolve_samples.py --process hahm_zd qcd_muenriched \
         --run run3 --tier MINIAODSIM --no-summary --no-sites
 
+    # Print only the coverage table, patterns that matched nothing and the
+    # special productions (all files are written as usual; errors still print)
+    python3 scripts/resolve_samples.py --tier MINIAODSIM --trimmed
+
 Outputs (default samples/resolved/):
     datasets.csv / datasets.json   every dataset found, with era, event counts and
                                    disk/tape sites (on_disk false = tape only)
@@ -266,7 +270,12 @@ def build_queries(cat, processes, runs, tiers):
     return jobs
 
 
+def _quiet(*_args, **_kwargs):
+    """print() replacement for output that --trimmed leaves out."""
+
+
 def resolve(cat, das, args, processes, runs, tiers):
+    say = _quiet if args.trimmed else print
     jobs = build_queries(cat, processes, runs, tiers)
     if args.dry_run:
         for job in jobs:
@@ -274,7 +283,7 @@ def resolve(cat, das, args, processes, runs, tiers):
         return 0
 
     patterns = sorted({job[4] for job in jobs})
-    print("Querying DAS: %d patterns, %d workers ..." % (len(patterns), args.workers))
+    say("Querying DAS: %d patterns, %d workers ..." % (len(patterns), args.workers))
     found, failures = run_parallel(lambda p: das.datasets(p, args.status), patterns, args.workers)
     # (process, run, tier) whose dataset list may be incomplete
     failed_scopes = {(name, run, tier) for name, run, tier, _, pattern in jobs if pattern in failures}
@@ -313,7 +322,7 @@ def resolve(cat, das, args, processes, runs, tiers):
     if args.no_summary:
         summaries = {}
     else:
-        print("Fetching event counts for %d datasets ..." % len(unique))
+        say("Fetching event counts for %d datasets ..." % len(unique))
         summaries, sum_failures = run_parallel(das.summary, unique, args.workers)
         failures.update({"summary " + k: v for k, v in sum_failures.items()})
     for rec in records.values():
@@ -322,7 +331,7 @@ def resolve(cat, das, args, processes, runs, tiers):
     if args.no_sites:
         sites = {}
     else:
-        print("Checking disk/tape sites for %d datasets ..." % len(unique))
+        say("Checking disk/tape sites for %d datasets ..." % len(unique))
         sites, site_failures = run_parallel(das.sites, unique, args.workers)
         failures.update({"sites " + k: v for k, v in site_failures.items()})
     for rec in records.values():
@@ -331,7 +340,7 @@ def resolve(cat, das, args, processes, runs, tiers):
     rows = sorted(records.values(), key=lambda r: (
         ["signal", "background", "control"].index(r["role"]), r["process"], r["run"],
         era_index(cat, r["run"], r["era"]), r["tier"], r["dataset"]))
-    write_outputs(cat, args, rows, processes, runs, tiers, failed_scopes)
+    write_outputs(cat, args, rows, processes, runs, tiers, failed_scopes, say)
 
     empty = [(n, r, p) for n, r, t, p, _ in jobs if pattern_hits[(n, r, p)] == 0]
     if empty:
@@ -343,14 +352,14 @@ def resolve(cat, das, args, processes, runs, tiers):
         owners[rec["dataset"]].add(rec["process"])
     shared = {ds: names for ds, names in owners.items() if len(names) > 1}
     if shared:
-        print("\nDatasets claimed by more than one process (tighten the patterns):")
+        say("\nDatasets claimed by more than one process (tighten the patterns):")
         for dataset, names in sorted(shared.items()):
-            print("  %s: %s" % (",".join(sorted(names)), dataset))
+            say("  %s: %s" % (",".join(sorted(names)), dataset))
     report_processing(cat, rows)
     unclassified = [r["dataset"] for r in rows if r["era"] == UNCLASSIFIED]
     if unclassified:
-        print("\n%d datasets did not match any era regex (listed in datasets.csv as '%s')."
-              % (len(unclassified), UNCLASSIFIED))
+        say("\n%d datasets did not match any era regex (listed in datasets.csv as '%s')."
+            % (len(unclassified), UNCLASSIFIED))
     return report_failures(failures)
 
 
@@ -384,7 +393,7 @@ def era_index(cat, run, era):
     return eras.index(era) if era in eras else len(eras)
 
 
-def write_outputs(cat, args, rows, processes, runs, tiers, failed_scopes=frozenset()):
+def write_outputs(cat, args, rows, processes, runs, tiers, failed_scopes=frozenset(), say=print):
     os.makedirs(args.out, exist_ok=True)
     fields = ["role", "priority", "process", "run", "era", "tier", "preferred",
               "nevents", "nfiles", "size_gb", "on_disk", "disk_sites", "tape_sites", "dataset",
@@ -401,20 +410,20 @@ def write_outputs(cat, args, rows, processes, runs, tiers, failed_scopes=frozens
                    "catalog": os.path.relpath(args.catalog, REPO),
                    "status": args.status, "datasets": rows}, handle, indent=1)
 
-    write_lists(cat, args.out, rows, processes, runs, tiers, failed_scopes)
-    write_tape_only(args.out, rows)
+    write_lists(cat, args.out, rows, processes, runs, tiers, failed_scopes, say)
+    write_tape_only(args.out, rows, say)
 
     table = coverage_table(cat, rows, processes, runs, tiers)
     with open(os.path.join(args.out, "coverage.txt"), "w") as handle:
         handle.write(table)
-    print("\n" + table)
-    print("Wrote %d datasets to %s" % (len(rows), display_path(args.out)))
+    print(table if say is _quiet else "\n" + table)
+    say("Wrote %d datasets to %s" % (len(rows), display_path(args.out)))
     if args.process or args.role or args.run or args.tier:
-        print("Filtered run: datasets.csv, datasets.json and coverage.txt cover only the "
-              "processes, runs and tiers queried this time.")
+        say("Filtered run: datasets.csv, datasets.json and coverage.txt cover only the "
+            "processes, runs and tiers queried this time.")
 
 
-def write_tape_only(out, rows):
+def write_tape_only(out, rows, say=print):
     """tape_only.txt: preferred datasets with no disk copy (they need a recall
     before jobs can read them). Removed when sites were not checked, so it never
     describes an older run."""
@@ -431,15 +440,15 @@ def write_tape_only(out, rows):
             handle.write("%s %s %s %s %s %s\n" % (rec["process"], rec["era"], rec["tier"], rec["size_gb"],
                                                   ",".join(rec["tape_sites"]) or "-", rec["dataset"]))
     size = sum(rec["size_gb"] or 0 for rec in tape)
-    print("\n%d of %d preferred datasets have no disk copy (%.0f GB): %s"
-          % (len(tape), len(checked), size, display_path(path)))
+    say("\n%d of %d preferred datasets have no disk copy (%.0f GB): %s"
+        % (len(tape), len(checked), size, display_path(path)))
 
 
 def list_path(out, tier, era, process):
     return os.path.join(out, "lists", tier, era, process + ".txt")
 
 
-def write_lists(cat, out, rows, processes, runs, tiers, failed_scopes):
+def write_lists(cat, out, rows, processes, runs, tiers, failed_scopes, say=print):
     """Rewrite lists/<tier>/<era>/<process>.txt for everything this run queried.
 
     Old list files in the queried (process, run, tier) scope are removed first,
@@ -474,13 +483,13 @@ def write_lists(cat, out, rows, processes, runs, tiers, failed_scopes):
 
     stale = sorted(removed - set(lists))
     if stale:
-        print("\nRemoved %d stale list file(s), no datasets found this time:" % len(stale))
+        say("\nRemoved %d stale list file(s), no datasets found this time:" % len(stale))
         for path in stale:
-            print("  " + display_path(path))
+            say("  " + display_path(path))
     if failed_scopes:
-        print("\nKept the previous lists (DAS query failed) for:")
+        say("\nKept the previous lists (DAS query failed) for:")
         for name, run, tier in sorted(failed_scopes):
-            print("  %-28s %-5s %s" % (name, run, tier))
+            say("  %-28s %-5s %s" % (name, run, tier))
 
 
 def display_path(path):
@@ -603,6 +612,10 @@ def main(argv=None):
     parser.add_argument("--no-sites", action="store_true",
                         help="skip the per-dataset disk/tape site check")
     parser.add_argument("--workers", type=int, default=6, help="parallel dasgoclient calls")
+    parser.add_argument("--trimmed", action="store_true",
+                        help="print only the coverage table, patterns that matched nothing and the "
+                             "special productions (output files are written as usual; DAS errors "
+                             "still print, on stderr)")
     parser.add_argument("--dry-run", action="store_true", help="print DAS queries and exit")
     parser.add_argument("--dasgoclient", default="dasgoclient", help="dasgoclient executable")
     parser.add_argument("--skip-proxy-check", action="store_true")

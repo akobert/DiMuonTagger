@@ -82,6 +82,7 @@ class _ResolverCase(unittest.TestCase):
         finally:
             os.environ.clear()
             os.environ.update(old_env)
+        self.err = err.getvalue()
         return code, out.getvalue()
 
     def list_file(self, era, process):
@@ -235,6 +236,37 @@ class TestProcessingVersions(_ResolverCase):
         self.assertRegex(out, r"FS\s+excluded\s+0 / 1")
         self.assertRegex(out, r"KeepRAW\s+fallback\s+0 / 1")
         self.assertIn("1 samples exist only in excluded productions", out)
+
+
+class TestTrimmed(_ResolverCase):
+    DATASETS = {SMU_FIX: ["T2_US_Nebraska"], TT_STD: ["T1_DE_KIT_Tape"], TT_RAW: ["T2_CH_CERN"]}
+
+    def test_trimmed_prints_only_the_three_blocks(self):
+        code, out = self.resolve(self.DATASETS, "--trimmed")
+        self.assertEqual(code, 0)
+        self.assertTrue(out.startswith("Coverage: preferred datasets per era"), out[:200])
+        self.assertIn("Patterns that matched nothing", out)
+        self.assertIn("Special productions", out)
+        for left_out in ("Querying DAS", "Checking disk/tape sites", "no disk copy", "Wrote ",
+                         "Filtered run", "Removed"):
+            self.assertNotIn(left_out, out)
+        # the files are written as usual
+        for name in ("datasets.csv", "datasets.json", "coverage.txt", "tape_only.txt"):
+            self.assertTrue(os.path.exists(os.path.join(self.out, name)), name)
+        self.assertEqual(self.read_list("2022postEE", "ttbar"), [TT_STD])
+
+    def test_default_output_still_complete(self):
+        code, out = self.resolve(self.DATASETS)
+        self.assertEqual(code, 0)
+        for shown in ("Querying DAS", "no disk copy", "Coverage:", "Wrote ", "Filtered run",
+                      "Patterns that matched nothing", "Special productions"):
+            self.assertIn(shown, out)
+
+    def test_trimmed_keeps_das_errors(self):
+        code, out = self.resolve(self.DATASETS, "--trimmed", fail="TTto2L2Nu")
+        self.assertEqual(code, 1)
+        self.assertIn("DAS queries failed", self.err)   # errors still shown, on stderr
+        self.assertNotIn("Kept the previous lists", out)
 
 
 if __name__ == "__main__":
