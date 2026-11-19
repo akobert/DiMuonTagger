@@ -15,28 +15,36 @@ MINIAODSIM and NANOAODSIM. Exact DAS dataset names are resolved on lxplus/LPC by
 
 | Role | Process (catalog key) | Why it matters for the tagger | Names |
 |---|---|---|---|
-| signal | HAHM H→Z_D Z_D, Z_D→μμ (`hahm_zd`) | Main benchmark of CMS EXO-21-006 (Run 2) and EXO-23-014 (Run 3). Run 3: m(Z_D) from 0.5 GeV, cτ in the name; 237 samples | Run 3 confirmed |
-| signal | H→XX, X→μμ (`h_to_llp_scalars`) | EXO-21-006 simplified model: heavier parents, m(X) above 10 GeV. 4μ and 2μ2jets variants; 140 samples | Run 3 confirmed |
-| signal | RPV χ̃⁰→ℓℓν (`rpv_neutralino_mumunu`) | EXO-23-014 second benchmark: boosted, asymmetric vertices with missing momentum; 131 samples | Run 3 confirmed |
+| signal | HAHM H→Z_D Z_D, Z_D→μμ (`hahm_zd`) | Main benchmark of CMS EXO-21-006 (Run 2) and EXO-23-014 (Run 3). Run 3: m(Z_D) from 0.5 GeV, cτ in the name; 237 samples | Run 3 only, confirmed |
+| signal | H→XX, X→μμ (`h_to_llp_scalars`) | EXO-21-006 simplified model: heavier parents, m(X) above 10 GeV. 4μ and 2μ2jets variants; 140 samples. Run 2: 4 2μ2jets points in 2016 | confirmed |
+| signal | RPV χ̃⁰→ℓℓν (`rpv_neutralino_mumunu`) | EXO-23-014 second benchmark: boosted, asymmetric vertices with missing momentum; 131 samples | Run 3 only, confirmed |
 | signal | tt̄ + ALP, a→μμ (`ttbar_alp_mumu`) | Low-mass (0.35–60 GeV) displaced dimuons in Run 3; 118 samples | Run 3 confirmed |
-| signal | B→Kφ, φ→μμ (`b_to_k_phi_mumu`) | Low-mass coverage from the scouting searches. No Run 3 MiniAOD sample exists | Run 2 only, unverified |
+| signal | B→Kφ, φ→μμ (`b_to_k_phi_mumu`) | Low-mass coverage from the scouting searches. No Run 3 MiniAOD sample exists; the Run 2 UL samples have φ→π⁺π⁻ | not used |
 | background | QCD μ-enriched (`qcd_muenriched`) | Dominant: b/c semileptonic decays, b→c→μ sequential pairs with real displaced vertices, π/K decay in flight | standard |
-| background | b-hadron → J/ψ(μμ) (`nonprompt_jpsi`) | Genuinely displaced (~mm) μμ vertices; irreducible at small displacement. Run 3: B⁺→J/ψK⁺ only | Run 3: 2024 confirmed |
+| background | b-hadron → J/ψ(μμ) (`nonprompt_jpsi`) | Genuinely displaced (~mm) μμ vertices; irreducible at small displacement. B⁺→J/ψK⁺ only | confirmed |
 | background | Drell–Yan (`drell_yan`) | Prompt μμ incl. low mass and Z→ττ; keeps the tagger off prompt vertices | standard |
 | background | tt̄ (`ttbar`) | Heavy-flavour vertices at higher pT, mixed prompt/non-prompt pairs | standard |
-| background | prompt J/ψ, Υ (`prompt_quarkonia`) | Narrow prompt resonances; stops the tagger learning the mass | unverified |
+| background | prompt J/ψ, Υ (`prompt_quarkonia`) | Narrow prompt resonances; stops the tagger learning the mass. Run 2: J/ψ and Υ(1S,2S,3S) | Run 2 confirmed |
 | background | tW, W+jets, diboson | Smaller contributions; same mechanisms | standard |
-| control | Uncorrelated displaced muons (`displaced_susy_uncorrelated`) | Two displaced muons that do *not* share a vertex: hard negatives. Run 3: smuon → μ gravitino (130 samples); Run 2: RPV stop (unverified) | Run 3 confirmed |
+| control | Uncorrelated displaced muons (`displaced_susy_uncorrelated`) | Two displaced muons that do *not* share a vertex: hard negatives. Run 3: smuon → μ gravitino (130 samples); Run 2: RPV stop → ℓb and ℓd (120 per era) | confirmed |
 
 The *core* processes are the HAHM and H→XX signals plus QCD μ-enriched,
 non-prompt J/ψ, Drell–Yan and tt̄. The rest are *secondary* or *optional*.
 
-**Run 2 means UL only.** The custom NanoAOD runs on UL MiniAODv2, and UL has
-little LLP→μμ signal (checked 2026-11-19): no HAHM or RPV samples, 4 H→XX
-points in 2016 and 6 B→Kφ samples in 2018. The Run 2 signal benchmarks exist
-in pre-UL campaigns (`RunIIAutumn18`, `RunIISummer16`), which are not used:
-they would need CMSSW_10_6, and their older reconstruction would differ from
-the UL backgrounds.
+**Run 2 means UL only.** The custom NanoAOD runs on UL MiniAODv2, and the
+only UL LLP→μμ signal (checked 2026-11-19) is 4 H→XX→2μ2jets points in 2016.
+2016preVFP has them only as MiniAODv1, which has no NANO recipe, so they are
+used in 2016postVFP. UL has no HAHM→μμ (`*HAHM*` matches only a→γγ samples),
+no RPV squark samples, and its B→Kφ samples have φ→π⁺π⁻. The Run 2 signal
+benchmarks exist in pre-UL campaigns (`RunIIAutumn18`, `RunIISummer16`), which
+are not used: they would need CMSSW_10_6, and their older reconstruction would
+differ from the UL backgrounds. So Run 2 contributes mainly backgrounds and the
+control sample.
+
+The Run 2 background patterns come from a DAS resolve on 2026-11-19 and, as in
+Run 3, name the nominal samples only: Pt-binned QCD MuEnrichedPt5, B⁺→J/ψK⁺,
+TuneCP5 J/ψ and Υ(nS)→μμ, and tW `NoFullyHadronicDecays` without its mtop,
+hdamp, width and DS variations.
 
 The Run 3 signal and control patterns come from a `--discover` run on
 2026-11-16. Run 3 signal names changed in 2024, when parameters moved behind
@@ -104,9 +112,10 @@ voms-proxy-init -voms cms -rfc -valid 192:00
      global tag in the processed name (`FixLLSleptonSim_130X_…`,
      `MUO_POG_130X_…`). `processing_prefixes` in the catalog decides:
      `FixLLSleptonSim` (fixed long-lived slepton simulation) beats the standard
-     sample; FastSim (`FS`) and flat Poisson pileup (`Poisson*`) are never used;
-     any other prefix (`KeepRAW`, `MUO_POG`, …) is used only when there is no
-     standard sample.
+     sample; FastSim (`FS*`), special pileup (`Poisson*`, `*PU*`: NoPU,
+     PU35ForTRK, PUForMUOVal, …) and pilots (`*Pilot*`) are never used; any
+     other prefix (`KeepRAW`, `MUO_POG`, `BPH`, …) is used only when there is
+     no standard sample.
    - **Then the newest format version** (e.g. NanoAODv9 over v2, MiniAODv4 over
      v3).
    - Extension samples (`_ext1`) stay preferred because they add statistics.

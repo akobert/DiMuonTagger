@@ -211,6 +211,11 @@ class TestProcessingVersions(_ResolverCase):
         self.assertIsNone(rank("FS"))
         self.assertIsNone(rank("Poisson60KeepRAW"))
         self.assertIsNone(rank("Poisson60ForMUOVal"))
+        for prefix in ("FSUL18", "FSUL18_ReSub", "NoPU", "EpsilonPU", "PU35ForTRK_TRK", "PUForTRKv2_TRKv2",
+                       "PUForMUOVal", "PUMu4_pilot", "Pilot", "PilotMuonHits", "SUS_SUS_SUS_SUS_Pilot2"):
+            self.assertIsNone(rank(prefix), prefix)
+        for prefix in ("BPH", "MUO_POG"):
+            self.assertEqual(rank(prefix), 0, prefix)
 
     def test_preferred_versions(self):
         code, out = self.resolve([SMU_STD, SMU_FIX, TT_STD, TT_EXT, TT_RAW, TT_PU, TT_FS, QCD_POG])

@@ -11,9 +11,11 @@
 # status:
 #   standard        - standard CMS central sample naming; expected to resolve as-is
 #   run3-confirmed  - Run 3 patterns taken from real names found by `--discover`
-#                     (2026-11-16); Run 2 patterns are still guesses
+#                     (2026-11-16)
+#   confirmed       - Run 2 and Run 3 patterns taken from real names (2026-11-19)
 #   unverified      - best-guess pattern; confirm with `resolve_samples.py --discover`
 #                     and replace with the real primary dataset names
+#   not used        - kept for reference, no patterns
 #
 # Run 3 signal names changed in 2024: parameters moved behind `_Par-`
 # (e.g. HTo2ZdTo2mu2x_MZd-20_ctau-10mm_... in 2022/23 vs
@@ -45,8 +47,10 @@ processing_prefixes:
   prefer:
     - FixLLSleptonSim   # re-simulation fixing long-lived sleptons; supersedes the standard sample
   exclude:
-    - FS                # FastSim: no realistic displaced-muon reconstruction
+    - FS*               # FastSim (FS, FSUL18, ...): no realistic displaced-muon reconstruction
     - Poisson*          # flat Poisson pileup (e.g. Poisson60KeepRAW), not the realistic profile
+    - "*PU*"            # special pileup: NoPU, EpsilonPU, PU35ForTRK, PUForMUOVal, PUMu4, ...
+    - "*Pilot*"         # pilot productions
 
 runs:
   run2:
@@ -102,12 +106,13 @@ processes:
   # same LLP; unmatched pairs in signal MC are background-like.
   #
   # Run 2 signal comes from UL campaigns only: the custom NanoAOD runs on UL
-  # MiniAODv2. UL has little LLP -> mu mu signal (checked 2026-11-19): no
-  # HAHM (HTo2Zd*) or RPV squark samples, 4 H -> XX points in 2016 (2016preVFP
-  # only as MiniAODv1, which has no NANO recipe) and 6 B -> K phi in 2018.
-  # The Run 2 benchmarks are in pre-UL campaigns (RunIIAutumn18,
-  # RunIISummer16), which are not used. The Run 2 patterns below are still the
-  # broad guesses; narrow them with `--discover --run run2`.
+  # MiniAODv2. The only UL LLP -> mu mu signal (checked 2026-11-19) is 4
+  # H -> XX -> 2mu2jets points in 2016; 2016preVFP has them only as
+  # MiniAODv1, which has no NANO recipe, so 2016postVFP is left. UL has no
+  # HAHM -> mu mu (*HAHM* matches only HAHMHToAA_AToGG, a -> gamma gamma), no
+  # RPV squark, and its B -> K phi samples have phi -> pi pi. The Run 2
+  # benchmarks are in pre-UL campaigns (RunIIAutumn18, RunIISummer16), which
+  # are not used.
 
   hahm_zd:
     role: signal
@@ -121,7 +126,6 @@ processes:
       2024 uses HTo2ZdTo2Mu2X_Par-.... (*HAHM* is not used: in Run 3 it only
       matches HAHM a -> bb / a -> gamma gamma samples, no muons.)
     patterns:
-      run2: ["*HTo2Zd*", "*HToZdZd*", "*HAHM*"]
       run3: ["HTo2ZdTo2mu2x_*_TuneCP5_13p6TeV*", "HTo2ZdTo2Mu2X_*_TuneCP5_13p6TeV*"]
 
   h_to_llp_scalars:
@@ -135,7 +139,7 @@ processes:
       jets) variants; a few 4mu points exist twice, with ..._13p6TeV_pythia8
       and ..._13p6TeV-pythia8 names.
     patterns:
-      run2: ["*HTo2LongLived*mu*", "*HTo2LongLived*Mu*"]
+      run2: ["HTo2LongLivedTo2mu2jets_*_TuneCP5_13TeV-pythia8"]   # 4 points, UL16 only
       run3: ["HTo2LongLivedTo4mu_*_13p6TeV*", "HTo2LongLivedTo2mu2jets_*_13p6TeV*",
              "HTo2LongLivedTo4Mu_Par-*_13p6TeV*", "HTo2LongLivedTo2Mu2Jets_Par-*_13p6TeV*"]
 
@@ -148,7 +152,6 @@ processes:
       mu mu nu and e e nu, 50% each). Adds missing momentum and a boosted,
       asymmetric vertex topology.
     patterns:
-      run2: ["*Squark*Neutralino*", "*RPV*Neutralino*", "*NeutralinoTo*Mu*"]
       run3: ["SquarkToNeutralinoTo2LNu*_TuneCP5_13p6TeV*"]  # "2LNu-MSquark_" (2022/23), "2LNu_Par-" (2024)
 
   ttbar_alp_mumu:
@@ -167,14 +170,14 @@ processes:
   b_to_k_phi_mumu:
     role: signal
     priority: secondary
-    status: unverified
+    status: not used
     description: >-
       B -> K phi, light long-lived scalar phi -> mu mu (scouting searches
-      EXO-20-014 / EXO-24-016). Extends signal coverage below ~10 GeV.
-      No Run 3 MiniAOD sample found by --discover (2026-11-16); see
-      ttbar_alp_mumu for low-mass Run 3 signal.
-    patterns:
-      run2: ["*ToKPhi*", "*toKPhi*"]
+      EXO-20-014 / EXO-24-016). Not used: no Run 3 MiniAOD sample
+      (--discover, 2026-11-16), and the Run 2 UL samples
+      (BToKPhi_MuonGenFilter_[MDS_]PhiToPiPlusPiMinus_..., 2018) have
+      phi -> pi+ pi-, not mu mu. See ttbar_alp_mumu for low-mass signal.
+    patterns: {}
 
   # ------------------------------------------------------------ background --
 
@@ -187,7 +190,9 @@ processes:
       semileptonic b/c decays (incl. b -> c -> mu sequential pairs with real
       displaced vertices), pi/K decay in flight, random two-track crossings.
     patterns:
-      run2: ["QCD_Pt-*_MuEnrichedPt5_TuneCP5_13TeV*", "QCD_Pt-20_MuEnrichedPt15_TuneCP5_13TeV*"]
+      # Pt-binned MuEnrichedPt5 only, as in Run 3; not the overlapping
+      # QCD_Pt-20_MuEnrichedPt15 or the small QCD_Pt-20toInf_MuEnrichedPt5.
+      run2: ["QCD_Pt-*To*_MuEnrichedPt5_TuneCP5_13TeV-pythia8", "QCD_Pt-1000_MuEnrichedPt5_TuneCP5_13TeV-pythia8"]
       run3:
         - "QCD_P*_MuEnrichedPt5_TuneCP5_13p6TeV*"                   # 2022/23
         - "QCD_Bin-PT-*_Fil-MuEnriched_TuneCP5_13p6TeV*"            # 2024
@@ -204,7 +209,9 @@ processes:
       broad "B*ToJpsi*" pattern matched 32 samples (2.9 billion events in
       2024 alone).
     patterns:
-      run2: ["B*ToJpsi*", "B*toJpsi*"]
+      # B+ -> J/psi K+ with a b-muon filter, as in Run 3 (2018 UL had 18
+      # B -> J/psi X samples, 2-98 M events each, matching B*ToJpsi*).
+      run2: ["BuToJpsiK_BMuonFilter_SoftQCDnonD_TuneCP5_13TeV*"]
       # 2024: ButoJpsiK-Jpsito2Mu_[Fil-Mu_]TuneCP5_...; 2022/23 is expected to
       # use underscores (as BdtoJpsiKstar_Jpsito2Mu_KstartoKPi_... does).
       run3: ["ButoJpsiK*Jpsito2Mu*_TuneCP5_13p6TeV*"]
@@ -254,7 +261,9 @@ processes:
       Prompt J/psi and Upsilon -> mu mu. Narrow resonances at the primary
       vertex; useful to keep the tagger from learning the mass.
     patterns:
-      run2: ["JpsiToMuMu*", "Jpsito2Mu*", "Upsilon*"]
+      # J/psi and Upsilon(1S,2S,3S) -> mu mu, TuneCP5 only (each Upsilon also
+      # exists with TuneCP1); not the pT-binned, tau tau or cascade samples.
+      run2: ["JpsiToMuMu_JpsiPt8_TuneCP5_13TeV*", "Upsilon*SToMuMu_Pt5_TuneCP5_13TeV*"]
       run3: ["Jpsito2Mu*_13p6TeV*", "Upsilon*_13p6TeV*"]
 
   single_top_tw:
@@ -266,8 +275,10 @@ processes:
       semileptonic decays, as for ttbar.
     patterns:
       run2:
-        - "ST_tW_top_5f_*_TuneCP5_13TeV-powheg-pythia8"
-        - "ST_tW_antitop_5f_*_TuneCP5_13TeV-powheg-pythia8"
+        # nominal NoFullyHadronicDecays only (the wildcard also matched
+        # mtop, hdamp, width, DS and inclusiveDecays samples)
+        - "ST_tW_top_5f_NoFullyHadronicDecays_TuneCP5_13TeV-powheg-pythia8"
+        - "ST_tW_antitop_5f_NoFullyHadronicDecays_TuneCP5_13TeV-powheg-pythia8"
       run3:
         - "TWminusto2L2Nu_TuneCP5_13p6TeV_powheg-pythia8"
         - "TbarWplusto2L2Nu_TuneCP5_13p6TeV_powheg-pythia8"
@@ -310,15 +321,16 @@ processes:
   displaced_susy_uncorrelated:
     role: control
     priority: optional
-    status: run3-confirmed
+    status: confirmed
     description: >-
       Two displaced muons that do NOT share a vertex. Hard negatives: tests
       vertex compatibility, not just large impact parameter. Run 2: RPV
-      stop -> b l (DisplacedSUSY, unverified). Run 3: GMSB smuon -> mu
-      gravitino, pair-produced, so each muon comes from a different smuon
-      (no DisplacedSUSY samples exist in Run 3).
+      stop -> l b and stop -> l d, pair-produced (DisplacedSUSY, 60 + 60
+      points per UL era). Run 3: GMSB smuon -> mu gravitino, pair-produced,
+      so each muon comes from a different smuon (no DisplacedSUSY samples
+      exist in Run 3).
     patterns:
-      run2: ["DisplacedSUSY*"]
+      run2: ["DisplacedSUSY_stopToLBottom_*", "DisplacedSUSY_stopToLD_*"]
       run3: ["SMuonToMuGravitino_*_TuneCP5_13p6TeV*"]
 
 # Not covered by MC here: cosmic-ray muons. Use cosmic / NoBPTX data, as the

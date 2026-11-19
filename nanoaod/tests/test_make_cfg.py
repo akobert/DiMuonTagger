@@ -288,6 +288,40 @@ class TestRun2(unittest.TestCase):
                 name = make_cfg.customise_for({"displaced_muons": displaced, "event_filter": filtered})
                 self.assertIn("def %s(process):" % name.split(".")[-1], source)
 
+    def test_run2_patterns_on_real_ul_names(self):
+        # names from the 2026-11-19 UL resolve and discovery (DisplacedSUSY suffixes illustrative)
+        wanted = {
+            "QCD_Pt-15To20_MuEnrichedPt5_TuneCP5_13TeV-pythia8": "qcd_muenriched",
+            "QCD_Pt-1000_MuEnrichedPt5_TuneCP5_13TeV-pythia8": "qcd_muenriched",
+            "BuToJpsiK_BMuonFilter_SoftQCDnonD_TuneCP5_13TeV-pythia8-evtgen": "nonprompt_jpsi",
+            "JpsiToMuMu_JpsiPt8_TuneCP5_13TeV-pythia8": "prompt_quarkonia",
+            "Upsilon1SToMuMu_Pt5_TuneCP5_13TeV_pythia8-EvtGen": "prompt_quarkonia",
+            "Upsilon3SToMuMu_Pt5_TuneCP5_13TeV_pythia8-EvtGen": "prompt_quarkonia",
+            "ST_tW_top_5f_NoFullyHadronicDecays_TuneCP5_13TeV-powheg-pythia8": "single_top_tw",
+            "ST_tW_antitop_5f_NoFullyHadronicDecays_TuneCP5_13TeV-powheg-pythia8": "single_top_tw",
+            "HTo2LongLivedTo2mu2jets_MH-125_MFF-20_CTau-130mm_TuneCP5_13TeV-pythia8": "h_to_llp_scalars",
+            "DisplacedSUSY_stopToLBottom_M_1000_100mm_TuneCP5_13TeV_pythia8": "displaced_susy_uncorrelated",
+            "DisplacedSUSY_stopToLD_M_1000_100mm_TuneCP5_13TeV_pythia8": "displaced_susy_uncorrelated",
+        }
+        unwanted = [
+            "QCD_Pt-20_MuEnrichedPt15_TuneCP5_13TeV-pythia8",          # overlaps the Pt5 bins
+            "QCD_Pt-20toInf_MuEnrichedPt5_TuneCP5_13TeV_pythia8",
+            "BuToJpsiK_BMuonFilter_TuneCP5_13TeV-pythia8-evtgen",       # second B+ sample
+            "BsToJpsiPhi_BMuonFilter_SoftQCDnonD_TuneCP5_13TeV-pythia8-evtgen",
+            "Upsilon1SToMuMu_Pt5_TuneCP1_13TeV_pythia8-EvtGen",          # tune duplicate
+            "UpsilonToTauTau_pth80To200_TuneCP5_13TeV_pythia8",
+            "Upsilon2SToUpsilon1S2Pi_Upsilon1STo2Mu_TuneCP5_13TeV_pythia8-evtgen",
+            "ST_tW_top_5f_NoFullyHadronicDecays_mtop1695_TuneCP5_13TeV-powheg-pythia8",
+            "ST_tW_top_5f_hdampup_NoFullyHadronicDecays_TuneCP5_13TeV-powheg-pythia8",
+            "ST_tW_top_5f_inclusiveDecays_TuneCP5_13TeV-powheg-pythia8",
+            "HAHMHToAA_AToGG_MA-1GeV_TuneCP5_13TeV-madgraphMLM-pythia8",  # a -> gamma gamma
+            "BToKPhi_MuonGenFilter_PhiToPiPlusPiMinus_m-1p0_ctau-1000_TuneCP5_13TeV_pythia8-evtgen",
+        ]
+        for primary, process in wanted.items():
+            self.assertEqual(make_cfg.catalog_process(primary, self.catalog, "run2"), process, primary)
+        for primary in unwanted:
+            self.assertIsNone(make_cfg.catalog_process(primary, self.catalog, "run2"), primary)
+
     def test_unsupported_version_is_skipped_not_an_error(self):
         v1 = ("/HTo2LongLivedTo4mu_MH-125_MFF-50_CTau-1000mm_TuneCP5_13TeV-pythia8/"
               "RunIISummer20UL16MiniAODAPV-106X_mcRun2_asymptotic_preVFP_v8-v1/MINIAODSIM")
